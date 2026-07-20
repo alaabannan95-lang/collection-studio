@@ -747,8 +747,13 @@ function downloadPng() {
   });
 }
 
-// ---------- Tech pack export (local Python backend, see scripts/techpack_server.py) ----------
-const TECHPACK_SERVER = 'http://localhost:5001';
+// ---------- Tech pack export (Python backend, see backend/app.py) ----------
+// Local dev hits the Flask server on localhost; the deployed site hits the
+// Render.com backend. Returns the PDF as a file download either way.
+const TECHPACK_SERVER =
+  (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    ? 'http://localhost:5001'
+    : 'https://collection-studio-techpack.onrender.com';
 
 // Computes every number the PDF needs for one print layer -- final pixel
 // geometry within that view's own image, plus the same real-cm placement
@@ -806,14 +811,26 @@ async function downloadTechpack() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Server error (${res.status})`);
     }
-    status.textContent = `Saved to ${data.relpath || 'assets/techpack/'}`;
+    const blob = await res.blob();
+    const filename = `${g.id}-${state.size}-techpack.pdf`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+    status.textContent = `Downloaded ${filename}`;
   } catch (e) {
     status.style.color = 'var(--signal)';
-    status.textContent = `Could not reach the tech pack server. Start it with: python3 scripts/techpack_server.py — ${e.message}`;
+    const waking = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+    status.textContent = waking
+      ? `Could not reach the tech pack server (free host may be waking up, try again in ~30s) — ${e.message}`
+      : `Could not reach the tech pack server. Start it with: python3 backend/app.py — ${e.message}`;
   } finally {
     btn.disabled = false;
   }

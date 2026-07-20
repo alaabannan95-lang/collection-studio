@@ -1,0 +1,15 @@
+# Render.com blueprint for the Collection Studio tech-pack export backend.
+# Deploy: Render Dashboard -> New -> Blueprint -> pick the collection-studio repo.
+services:
+  - type: web
+    name: collection-studio-techpack
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
