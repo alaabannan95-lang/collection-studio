@@ -195,6 +195,8 @@ header.topbar .tag {
 }
 
 .hint { font-size: 11px; color: var(--charcoal); line-height: 1.5; margin: 6px 0 16px; }
+.linklike { background: none; border: none; padding: 0; font-size: 11px; color: var(--charcoal); text-decoration: underline; cursor: pointer; font-family: inherit; }
+.linklike:hover { color: var(--ink); }
 
 /* Seams tab */
 #seamList { display: flex; flex-direction: column; gap: 8px; }

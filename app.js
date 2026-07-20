@@ -293,6 +293,7 @@ function bindGlobalControls() {
 
   document.getElementById('downloadBtn').addEventListener('click', downloadPng);
   document.getElementById('downloadTechpackBtn').addEventListener('click', downloadTechpack);
+  initTechpackFolderButton();
 
   document.getElementById('saveDesignBtn').addEventListener('click', saveCurrentDesign);
   document.getElementById('designNameInput').addEventListener('keydown', e => {
@@ -780,6 +781,101 @@ function serializePrintForExport(g, p) {
   };
 }
 
+// ---------- Save-to-folder (File System Access API, Chromium only) ----------
+// Lets Alaa pick the project's assets/techpack folder once; every later export
+// writes straight into it. The chosen folder handle persists in IndexedDB.
+// Safari/Firefox have no such API, so those fall back to a normal download.
+function fsAccessSupported() {
+  return 'showDirectoryPicker' in window;
+}
+
+// Timestamped so a new export never overwrites an earlier one: e.g.
+// hoodie-S-techpack-2026-07-21-0143.pdf
+function techpackStamp() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('soap-studio', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGetHandle() {
+  try {
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const r = db.transaction('kv', 'readonly').objectStore('kv').get('techpackDir');
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+async function idbSetHandle(handle) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const r = db.transaction('kv', 'readwrite').objectStore('kv').put(handle, 'techpackDir');
+    r.onsuccess = () => resolve();
+    r.onerror = () => reject(r.error);
+  });
+}
+
+// queryPermission is safe any time; requestPermission needs live user
+// activation, so only pass requestIfNeeded=true from inside a click handler.
+async function verifyRWPermission(handle, requestIfNeeded) {
+  const opts = { mode: 'readwrite' };
+  try {
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if (requestIfNeeded && (await handle.requestPermission(opts)) === 'granted') return true;
+  } catch (e) { /* handle no longer valid */ }
+  return false;
+}
+
+async function writePdfToDir(dirHandle, filename, blob) {
+  const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(blob);
+  await writable.close();
+}
+
+// The "Set / Change save folder" link under the export button.
+function initTechpackFolderButton() {
+  const folderBtn = document.getElementById('techpackFolderBtn');
+  if (!folderBtn) return;
+  if (!fsAccessSupported()) { folderBtn.style.display = 'none'; return; }
+
+  idbGetHandle().then(h => {
+    folderBtn.style.display = '';
+    folderBtn.textContent = h ? 'Change save folder…' : 'Set save folder…';
+  });
+
+  folderBtn.addEventListener('click', async () => {
+    const status = document.getElementById('techpackStatus');
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await verifyRWPermission(handle, true);
+      await idbSetHandle(handle);
+      folderBtn.textContent = 'Change save folder…';
+      status.style.color = '';
+      status.textContent = `Save folder set to “${handle.name}”. Tech packs will save there automatically.`;
+    } catch (e) {
+      // AbortError = user closed the picker; ignore silently.
+      if (e && e.name !== 'AbortError') {
+        status.style.color = 'var(--signal)';
+        status.textContent = `Could not set folder — ${e.message}`;
+      }
+    }
+  });
+}
+
 async function downloadTechpack() {
   const status = document.getElementById('techpackStatus');
   const btn = document.getElementById('downloadTechpackBtn');
@@ -806,6 +902,15 @@ async function downloadTechpack() {
   status.style.color = '';
   status.textContent = 'Generating PDF…';
   try {
+    // Resolve the save folder while the click's user activation is still live
+    // (showDirectoryPicker / requestPermission need it, and it expires during
+    // the fetch below — especially on a cold-starting free backend).
+    let dirHandle = null;
+    if (fsAccessSupported()) {
+      const stored = await idbGetHandle();
+      if (stored && await verifyRWPermission(stored, true)) dirHandle = stored;
+    }
+
     const res = await fetch(`${TECHPACK_SERVER}/generate-techpack`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -816,15 +921,29 @@ async function downloadTechpack() {
       throw new Error(data.error || `Server error (${res.status})`);
     }
     const blob = await res.blob();
-    const filename = `${g.id}-${state.size}-techpack.pdf`;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(a.href);
-    status.textContent = `Downloaded ${filename}`;
+    const filename = `${g.id}-${state.size}-techpack-${techpackStamp()}.pdf`;
+    // Present when a local backend run filed the PDF into assets/techpack.
+    const serverSavedPath = res.headers.get('X-Saved-Path');
+
+    if (dirHandle) {
+      await writePdfToDir(dirHandle, filename, blob);
+      status.textContent = `Saved to your tech pack folder as ${filename}`;
+    } else {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      if (serverSavedPath) {
+        status.textContent = `Saved to ${serverSavedPath} (and downloaded a copy)`;
+      } else {
+        status.textContent = fsAccessSupported()
+          ? `Downloaded ${filename}. Tip: click “Set save folder” to auto-file exports into assets/techpack.`
+          : `Downloaded ${filename}`;
+      }
+    }
   } catch (e) {
     status.style.color = 'var(--signal)';
     const waking = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
