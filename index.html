@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOAP Collection Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,400;0,600;0,700;1,400&family=Shrikhand&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <img src="assets/logo.png" alt="Story Of A Pilgrim">
+  <h1>Collection Studio</h1>
+  <span class="tag">Recolor &middot; Print &middot; Spec</span>
+</header>
+
+<div class="layout">
+
+  <div class="panel left">
+    <div class="section-title">Collection</div>
+    <ul class="garment-list" id="garmentList"></ul>
+
+    <div class="section-title" style="margin-top:20px;">Size</div>
+    <div class="size-row" id="sizeRow"></div>
+
+    <div class="section-title" style="margin-top:20px;">View</div>
+    <div class="view-toggle" id="viewToggle"></div>
+  </div>
+
+  <div class="stage-wrap">
+    <canvas id="stageCanvas"></canvas>
+    <div class="stage-caption">Real flat-drawing art from the tech pack. Drag the print to reposition.</div>
+  </div>
+
+  <div class="panel right">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="color">Color</button>
+      <button class="tab-btn" data-tab="print">Print</button>
+      <button class="tab-btn" data-tab="measure">Measure</button>
+      <button class="tab-btn" data-tab="seams">Seams</button>
+      <button class="tab-btn" data-tab="save">Save</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-color">
+      <div class="colorway-chip" id="colorwayChip"></div>
+      <div id="printColorwayChips"></div>
+      <div class="section-title">Brand swatches</div>
+      <div class="swatch-grid" id="swatchGrid"></div>
+      <div class="section-title">Custom color</div>
+      <div class="color-input-row">
+        <input type="color" id="colorPicker">
+        <input type="text" id="colorHex" maxlength="7" spellcheck="false">
+      </div>
+      <p class="hint">Pick any RGB/hex color, including one read off a physical Pantone book. Screen color is approximate; production always matches the Pantone TCX code, not the hex.</p>
+      <button class="btn secondary" id="resetColorBtn">Reset to locked colorway</button>
+    </div>
+
+    <div class="tab-panel" id="tab-print">
+      <p class="hint">Upload artwork or add the SOAP wordmark. Works independently on front and back: use the View toggle on the left to switch sides, artwork you add stays on whichever side was active. Click a layer to select it, drag on the garment to reposition.</p>
+      <label class="btn" for="printUpload">Add artwork</label>
+      <input type="file" id="printUpload" accept="image/*" multiple>
+      <button class="btn secondary" id="useLogoBtn">Add SOAP logo</button>
+
+      <div class="section-title" id="layersHeading" style="margin-top:18px;">Layers</div>
+      <p class="hint" id="layerEmpty">No artwork added yet.</p>
+      <ul class="layer-list" id="layerList"></ul>
+
+      <div id="printControls" style="display:none;">
+        <div class="section-title">Print method</div>
+        <div class="method-toggle" id="methodToggle">
+          <button type="button" data-method="embroidery">Embroidery</button>
+          <button type="button" data-method="screen">Screen Printing</button>
+        </div>
+
+        <div class="section-title">Print color</div>
+        <div class="swatch-grid" id="printSwatchGrid"></div>
+        <div class="color-input-row">
+          <input type="color" id="printColorPicker">
+          <input type="text" id="printColorHex" maxlength="7" spellcheck="false" placeholder="original colors">
+        </div>
+        <button class="btn secondary" id="resetPrintColorBtn">Use original colors</button>
+
+        <div class="slider-row" style="margin-top:16px;">
+          <label><span>Scale</span><span id="printScaleVal"></span></label>
+          <input type="range" id="printScale" min="0.2" max="2.5" step="0.01">
+        </div>
+        <div class="slider-row">
+          <label><span>Rotation</span><span id="printRotationVal"></span></label>
+          <input type="range" id="printRotation" min="-180" max="180" step="1">
+        </div>
+        <div class="slider-row">
+          <label><span>Opacity</span><span id="printOpacityVal"></span></label>
+          <input type="range" id="printOpacity" min="0.1" max="1" step="0.01">
+        </div>
+        <p class="hint" id="printPlacementInfo" style="margin:0 0 12px;"></p>
+        <button class="btn danger" id="removePrintBtn">Remove layer</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-measure">
+      <div class="section-title">Date</div>
+      <div class="color-input-row">
+        <input type="date" id="dateInput">
+      </div>
+      <p class="hint">Defaults to today. Edit it if the tech pack needs to carry a different date.</p>
+
+      <div class="section-title">Reference number</div>
+      <div class="color-input-row">
+        <input type="text" id="refNoInput" placeholder="e.g. 1">
+      </div>
+      <p class="hint">Defaults to this garment's locked collection ref. Edit it to identify this specific custom variant on the tech pack header.</p>
+
+      <div class="section-title">Fabric</div>
+      <div class="color-input-row">
+        <select id="fabricInput"></select>
+        <input type="number" id="gsmInput" min="0" step="1" placeholder="GSM, e.g. 500">
+      </div>
+      <p class="hint">Fabric construction and grams per square metre. Both print on the tech pack's header block once downloaded.</p>
+
+      <div class="section-title">Wash / finish</div>
+      <div class="color-input-row">
+        <select id="washInput"></select>
+      </div>
+      <p class="hint">Garment wash / dye finish. Prints in the tech pack header. "Raw" means no wash.</p>
+
+      <div class="section-title">Point of measure (cm)</div>
+      <div id="measureTable"></div>
+      <div class="pom-note" id="measureNote"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-seams">
+      <p class="hint">Pick the seam finish for each construction point. Each one prints on the tech pack's Seam Finish page: a photo reference plus a callout arrow to that part of the flat drawing.</p>
+      <div id="seamList"></div>
+    </div>
+
+    <div class="tab-panel" id="tab-save">
+      <p class="hint">Save this color + print setup under a name so you can reopen or re-export it later. Saved on this computer only.</p>
+      <div class="color-input-row">
+        <input type="text" id="designNameInput" placeholder="Design name" style="flex:1;">
+      </div>
+      <button class="btn" id="saveDesignBtn">Save current design</button>
+
+      <div class="section-title" style="margin-top:20px;">Saved designs</div>
+      <p class="hint" id="designEmpty">No saved designs yet.</p>
+      <ul class="layer-list" id="designList"></ul>
+    </div>
+
+    <div style="margin-top:22px; border-top:1px solid var(--hairline); padding-top:14px;">
+      <button class="btn" id="downloadBtn">Download PNG</button>
+      <button class="btn secondary" id="downloadTechpackBtn">Download Tech Pack</button>
+      <p class="hint" id="techpackStatus" style="margin-top:8px;"></p>
+    </div>
+  </div>
+
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
