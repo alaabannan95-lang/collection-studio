@@ -9,17 +9,36 @@
  */
 
 /*
- * Real pixel-to-centimetre calibration per garment/view, measured directly off
- * the flat-drawing PNGs by scripts/calibrate_studio_flats.py:
- *   pxPerCm  - scale factor (chest width in px / chest width in cm, from the
- *              garment's own point-of-measure data)
- *   hspY     - the shoulder/collar reference row in px ("HSP", skips past a
- *              hood tip on hooded garments)
+ * Real pixel-to-centimetre calibration per garment/view, measured off the
+ * flat-drawing PNGs:
+ *   pxPerCm  - scale factor, px per real centimetre
+ *   hspY     - the shoulder/collar reference row in px ("HSP")
  *   centerX  - horizontal garment centerline in px
- * This lets print placement be expressed and displayed in real centimetres
- * instead of guessed screen fractions, matching the 12cm-wide /
- * 14cm-down-from-collar chest logo convention already used in
- * scripts/build_mockup.py.
+ * These drive the widthCm / belowCollarCm figures app.js prints on the tech
+ * pack PDF, so the factory cuts and prints to them.
+ *
+ * !! The old values from scripts/calibrate_studio_flats.py were WRONG. !!
+ *
+ * That script took chest_px as the median silhouette width across the middle
+ * of the drawing. At that height the sleeves hang against the body and the
+ * silhouette is one connected span, so it measured body PLUS both sleeves
+ * while dividing by the body-only chest. It then placed HSP at the first row
+ * reaching half that inflated width, which on a hooded garment lands inside
+ * the hood rather than at the shoulder.
+ *
+ * Result: the hoodie read 12.902 px/cm against a true 9.479, about 36% high,
+ * with HSP 69px (7cm) above the real shoulder. Every cm figure the app showed,
+ * and every tech pack exported before 2026-07-21, carries those errors.
+ *
+ * hoodie and jacket below are RECALIBRATED by backend/flats/calibrate_flats.py,
+ * which derives scale from the ribbed hem band (the one body feature that
+ * separates cleanly from the sleeves) and then derives HSP from the garment's
+ * own front length instead of searching for it. The hoodie is cross-checked
+ * against three independent POM references agreeing to within 7%.
+ *
+ * The other five garments still hold the OLD, WRONG values: their flats have
+ * no ribbed hem to anchor on, so they need their pit points measured by hand
+ * before they can be corrected. Treat their cm figures as unreliable.
  */
 const CALIBRATION = {
   'tee-navy': {
@@ -38,13 +57,19 @@ const CALIBRATION = {
     front: { w: 1060, h: 1149, pxPerCm: 15.95, hspY: 100, centerX: 548.0 },
     back:  { w: 923, h: 997, pxPerCm: 13.714, hspY: 38, centerX: 442.0 },
   },
+  // RECALIBRATED 2026-07-21 (was 14.65/162 and 14.553/38, both wrong).
+  // Anchored on the hem band; not cross-checked against a second reference the
+  // way the hoodie is, so treat as good but unverified.
   'jacket': {
-    front: { w: 1015, h: 1203, pxPerCm: 14.65, hspY: 162, centerX: 506.0 },
-    back:  { w: 1016, h: 1249, pxPerCm: 14.553, hspY: 38, centerX: 488.5 },
+    front: { w: 1015, h: 1203, pxPerCm: 8.583, hspY: 468, centerX: 506.0 },
+    back:  { w: 1016, h: 1249, pxPerCm: 8.600, hspY: 513, centerX: 508.0 },
   },
+  // RECALIBRATED 2026-07-21 (was 12.902/148 and 12.754/191, both wrong).
+  // Cross-checked against three independent POM references: hem band 9.42,
+  // body length 9.76, sleeve opening at seam 10.07 px/cm.
   'hoodie': {
-    front: { w: 941, h: 993, pxPerCm: 12.902, hspY: 148, centerX: 469.5 },
-    back:  { w: 941, h: 1038, pxPerCm: 12.754, hspY: 191, centerX: 470.0 },
+    front: { w: 941, h: 993, pxPerCm: 9.479, hspY: 217, centerX: 470.0 },
+    back:  { w: 941, h: 1038, pxPerCm: 9.479, hspY: 262, centerX: 471.0 },
   },
   'crewneck': {
     front: { w: 975, h: 1011, pxPerCm: 13.61, hspY: 98, centerX: 487.0 },
