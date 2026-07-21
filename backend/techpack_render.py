@@ -159,15 +159,17 @@ def tint_print(img, hex_color):
     return Image.fromarray(out, 'RGBA')
 
 
-def composite_print(base, p):
+def composite_print(base, p, ss=1):
     """Composite one print layer onto the recolored garment image. p carries
     final pixel geometry (cx, cy, w, h, rotation) already computed by the
     Studio app using its own calibration, so this file has no placement
-    math of its own to drift out of sync with the browser preview."""
+    math of its own to drift out of sync with the browser preview.
+    `ss` is a supersample factor: when the base garment image was rendered
+    larger for crispness, the print geometry is scaled by the same factor."""
     img = decode_data_url(p['src'])
     if p.get('color'):
         img = tint_print(img, p['color'])
-    w, h = max(1, int(round(p['w']))), max(1, int(round(p['h'])))
+    w, h = max(1, int(round(p['w'] * ss))), max(1, int(round(p['h'] * ss)))
     resized = img.resize((w, h), Image.LANCZOS)
     opacity = p.get('opacity', 1)
     if opacity < 1:
@@ -177,8 +179,8 @@ def composite_print(base, p):
     rotation = p.get('rotation', 0)
     if rotation:
         resized = resized.rotate(-rotation, expand=True, resample=Image.BICUBIC)
-    px = int(round(p['cx'] - resized.width / 2))
-    py = int(round(p['cy'] - resized.height / 2))
+    px = int(round(p['cx'] * ss - resized.width / 2))
+    py = int(round(p['cy'] * ss - resized.height / 2))
     base.paste(resized, (px, py), resized)
 
 
@@ -197,12 +199,19 @@ def tint_white_to_cream(png_path):
     return Image.fromarray(out, 'RGBA')
 
 
-def build_view_image(assetKey, view, color, prints):
+def build_view_image(assetKey, view, color, prints, ss=1):
+    """Build one recolored garment view with its prints composited on. `ss`
+    supersamples the whole view (garment + prints) so text / artwork prints
+    stay crisp when a PDF viewer magnifies the embedded raster -- without a
+    high-res source, viewers over-sharpen the small print and ring its edges
+    with a light halo. Print geometry is scaled by the same factor."""
     png_path = ASSETS / f"{assetKey}_{view}.png"
     img = recolor_garment(png_path, color)
+    if ss != 1:
+        img = img.resize((img.width * ss, img.height * ss), Image.LANCZOS)
     for p in prints:
         if p['view'] == view:
-            composite_print(img, p)
+            composite_print(img, p, ss)
     return img
 
 
@@ -265,8 +274,11 @@ def draw_flat_drawing_page(c, spec, season_tag, garment, color, prints):
     half_w = CONTENT_W / 2 - 10
     label_h = 20
 
-    front_img = build_view_image(garment['assetKey'], 'front', color, prints)
-    back_img = build_view_image(garment['assetKey'], 'back', color, prints)
+    # ss=3 keeps text / artwork prints crisp when the PDF is zoomed (a low-res
+    # print gets a light ringing halo from viewer over-sharpening). This page
+    # only places the images, so scaling them up has no coordinate side effects.
+    front_img = build_view_image(garment['assetKey'], 'front', color, prints, ss=3)
+    back_img = build_view_image(garment['assetKey'], 'back', color, prints, ss=3)
 
     tracked(c, "FRONT", M, content_top - 4, "RobotoCondItalic", 8, SIGNAL, tracking=1.6)
     tracked(c, "BACK", M + half_w + 20, content_top - 4, "RobotoCondItalic", 8, SIGNAL, tracking=1.6)
@@ -441,6 +453,10 @@ def draw_leader(c, x1, y1, x2, y2, color=SIGNAL):
     c.setStrokeColor(color); c.setLineWidth(0.8)
     c.line(x1, y1, x2, y2)
     _arrowhead(c, x2, y2, math.atan2(y2 - y1, x2 - x1), color=color)
+    # Small filled dot exactly on the construction point so the target is
+    # unmistakable (the leader marks the precise seam, not just its direction).
+    c.setFillColor(color)
+    c.circle(x2, y2, 2.0, stroke=0, fill=1)
 
 
 def _wrap_lines(c, text, font, size, max_w):
@@ -553,12 +569,18 @@ def draw_pom_diagram_page(c, spec, season_tag, garment):
     c.showPage()
 
 
-def draw_size_chart_page(c, spec, season_tag, garment):
+def draw_size_chart_page(c, spec, season_tag, garment, size_grid=None):
     strip_bottom = frame(c, 7, TOTAL_PAGES, "Size Chart", "Grade rule, centimetres", spec, season_tag)
     content_top = strip_bottom - 12
     content_bot = CONTENT_BOTTOM + 6
     pomkey = garment.get('pomKey')
-    if pomkey and pomkey.get('rows'):
+    # The Studio sends the full XS-XXL grid (graded + any manual edits) so the
+    # printed chart always matches the app's Measure tab. Prefer it when present.
+    if size_grid and size_grid.get('rows'):
+        headers = size_grid['headers']
+        rows = [(r['label'], [r['values'].get(h, '') for h in headers]) for r in size_grid['rows']]
+        keys = None
+    elif pomkey and pomkey.get('rows'):
         headers = pomkey['headers']
         rows = [(r['label'], [r['values'].get(h, '') for h in headers]) for r in pomkey['rows']]
         keys = [r.get('key', '') for r in pomkey['rows']]
@@ -608,7 +630,7 @@ def build_custom_techpack(payload):
     draw_seam_finish_page(c, spec, season_tag, garment, color,
                           payload.get('seamParts', []), payload.get('seamFinishes', []))
     draw_pom_diagram_page(c, spec, season_tag, garment)
-    draw_size_chart_page(c, spec, season_tag, garment)
+    draw_size_chart_page(c, spec, season_tag, garment, payload.get('sizeGrid'))
 
     c.save()
     return buf.getvalue()

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOAP — Seam Anchor Editor</title>
+<style>
+  :root { color-scheme: dark; --bg:#1c1c1f; --panel:#26262b; --line:rgba(255,255,255,.12);
+    --ink:#f3f1ec; --muted:#a9a9b0; --signal:#ef5350; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 'Roboto Condensed','Helvetica Neue',Arial,sans-serif; }
+  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; letter-spacing:.3px; }
+  select { background:var(--panel); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:7px 10px; font:inherit; cursor:pointer; }
+  .wrap { display:grid; grid-template-columns: minmax(360px,1fr) 340px; gap:20px; padding:20px 22px; align-items:start; }
+  .stage { position:relative; background:#f4f4f2; border-radius:10px; overflow:hidden; user-select:none; touch-action:none; }
+  .stage img { display:block; width:100%; height:auto; pointer-events:none; }
+  .dot { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%;
+    background:var(--signal); border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.4); cursor:grab; z-index:2; }
+  .dot.sel { width:20px; height:20px; margin:-10px 0 0 -10px; box-shadow:0 0 0 3px rgba(239,83,80,.4); }
+  .dot .tag { position:absolute; left:14px; top:-4px; white-space:nowrap; font-size:11px; font-weight:700;
+    color:#b00; background:rgba(255,255,255,.85); padding:1px 5px; border-radius:3px; pointer-events:none; }
+  .side { display:flex; flex-direction:column; gap:14px; }
+  .parts { display:flex; flex-direction:column; gap:5px; }
+  .part { display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--line);
+    background:var(--panel); border-radius:7px; cursor:pointer; font-size:13px; }
+  .part.sel { border-color:var(--signal); background:rgba(239,83,80,.12); }
+  .part .co { color:var(--muted); font-variant-numeric:tabular-nums; font-size:12px; }
+  .hint { color:var(--muted); font-size:12.5px; line-height:1.6; }
+  textarea { width:100%; height:190px; background:#141416; color:#cfe; border:1px solid var(--line);
+    border-radius:8px; padding:10px; font:12px/1.45 'SFMono-Regular',ui-monospace,monospace; resize:vertical; }
+  button { background:var(--signal); color:#17171a; border:none; border-radius:7px; padding:10px 14px;
+    font:inherit; font-weight:700; letter-spacing:.5px; text-transform:uppercase; cursor:pointer; }
+  button.ghost { background:var(--panel); color:var(--ink); border:1px solid var(--line); }
+  .row { display:flex; gap:8px; }
+  code { background:#141416; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Seam Anchor Editor</h1>
+  <label>Garment
+    <select id="silSel"></select>
+  </label>
+  <span class="hint">Click a seam, then click the garment to place its dot — or just drag the dot. Edits are kept as you switch garments.</span>
+</header>
+
+<div class="wrap">
+  <div class="stage" id="stage">
+    <img id="flat" alt="">
+  </div>
+  <div class="side">
+    <div class="parts" id="parts"></div>
+    <div class="hint">When every dot sits on its seam for all garments, click <b>Copy anchors</b> and paste it back to me — I'll bake it into the tech pack.</div>
+    <div class="row">
+      <button id="copyBtn">Copy anchors</button>
+      <button class="ghost" id="resetBtn">Reset this garment</button>
+    </div>
+    <textarea id="out" readonly spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script>
+const REP = { tee:'tee-navy', tank:'tank', longsleeve:'longsleeve', crewneck:'crewneck', hoodie:'hoodie', jacket:'jacket' };
+const LABEL = { neck:'Neckline', 'rib-collar':'Rib collar', shoulder:'Shoulder seam', 'sleeve-join':'Sleeve join',
+  sleeve:'Sleeve hem', cuff:'Cuff', armhole:'Armhole', side:'Side seam', hem:'Hem', hood:'Hood', pocket:'Pocket' };
+// Current anchors (defaults). Edits override these and persist in localStorage.
+const DEFAULTS = {
+  tee:{ neck:[0.50,0.055], shoulder:[0.30,0.115], 'sleeve-join':[0.21,0.22], sleeve:[0.10,0.53], side:[0.79,0.62], hem:[0.50,0.94] },
+  tank:{ neck:[0.50,0.07], shoulder:[0.33,0.08], armhole:[0.19,0.25], side:[0.79,0.62], hem:[0.50,0.94] },
+  longsleeve:{ neck:[0.50,0.05], shoulder:[0.31,0.11], 'sleeve-join':[0.21,0.20], cuff:[0.11,0.92], side:[0.79,0.58], hem:[0.50,0.93] },
+  crewneck:{ neck:[0.50,0.05], shoulder:[0.31,0.11], 'sleeve-join':[0.22,0.19], cuff:[0.11,0.88], side:[0.75,0.55], hem:[0.50,0.79] },
+  hoodie:{ hood:[0.50,0.06], neck:[0.50,0.19], shoulder:[0.31,0.19], 'sleeve-join':[0.20,0.28], cuff:[0.11,0.89], pocket:[0.38,0.66], hem:[0.50,0.81], side:[0.73,0.55] },
+  jacket:{ hood:[0.50,0.07], shoulder:[0.26,0.17], 'sleeve-join':[0.23,0.26], cuff:[0.13,0.87], pocket:[0.36,0.66], hem:[0.50,0.81], side:[0.72,0.60] },
+};
+const KEY = 'soap_seam_anchors';
+let data = load();
+let sil = 'tee', selPart = null;
+
+function load(){ try { const o = JSON.parse(localStorage.getItem(KEY)||'null'); if(o) return o; } catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULTS)); }
+function save(){ localStorage.setItem(KEY, JSON.stringify(data)); }
+
+const silSel = document.getElementById('silSel');
+Object.keys(DEFAULTS).forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; silSel.appendChild(o); });
+silSel.addEventListener('change', ()=>{ sil=silSel.value; selPart=null; render(); });
+
+const stage = document.getElementById('stage');
+const flat = document.getElementById('flat');
+const partsEl = document.getElementById('parts');
+const out = document.getElementById('out');
+
+function render(){
+  flat.src = 'assets/'+REP[sil]+'_front.png';
+  [...stage.querySelectorAll('.dot')].forEach(d=>d.remove());
+  const parts = data[sil];
+  partsEl.innerHTML='';
+  Object.keys(parts).forEach(pid=>{
+    const [x,y]=parts[pid];
+    const dot=document.createElement('div'); dot.className='dot'+(pid===selPart?' sel':''); dot.dataset.pid=pid;
+    dot.style.left=(x*100)+'%'; dot.style.top=(y*100)+'%';
+    dot.innerHTML='<span class="tag">'+(LABEL[pid]||pid)+'</span>';
+    stage.appendChild(dot);
+    const row=document.createElement('div'); row.className='part'+(pid===selPart?' sel':''); row.dataset.pid=pid;
+    row.innerHTML='<span>'+(LABEL[pid]||pid)+'</span><span class="co">'+x.toFixed(3)+', '+y.toFixed(3)+'</span>';
+    row.addEventListener('click', ()=>{ selPart=pid; render(); });
+    partsEl.appendChild(row);
+  });
+  updateOut();
+  bindDots();
+}
+
+function setAnchor(pid, cx, cy){
+  const r = stage.getBoundingClientRect();
+  let x = (cx - r.left)/r.width, y = (cy - r.top)/r.height;
+  x = Math.max(0, Math.min(1, x)); y = Math.max(0, Math.min(1, y));
+  data[sil][pid] = [Math.round(x*1000)/1000, Math.round(y*1000)/1000];
+  save(); render();
+}
+
+function bindDots(){
+  stage.querySelectorAll('.dot').forEach(dot=>{
+    dot.addEventListener('pointerdown', e=>{
+      e.preventDefault(); const pid=dot.dataset.pid; selPart=pid;
+      dot.setPointerCapture(e.pointerId);
+      const move=ev=>setAnchor(pid, ev.clientX, ev.clientY);
+      const up=()=>{ dot.removeEventListener('pointermove',move); dot.removeEventListener('pointerup',up); };
+      dot.addEventListener('pointermove',move); dot.addEventListener('pointerup',up);
+    });
+  });
+}
+
+// Click on the stage (not on a dot) to place the selected seam there.
+stage.addEventListener('pointerdown', e=>{
+  if(e.target.classList.contains('dot') || e.target.classList.contains('tag')) return;
+  if(!selPart) return;
+  setAnchor(selPart, e.clientX, e.clientY);
+});
+
+function updateOut(){
+  const lines = Object.keys(data).map(s=>{
+    const parts = Object.keys(data[s]).map(p=>`    "${p}": { x: ${data[s][p][0]}, y: ${data[s][p][1]} }`).join(',\n');
+    return `  "${s}": {\n${parts}\n  }`;
+  }).join(',\n');
+  out.value = '{\n'+lines+'\n}';
+}
+
+document.getElementById('copyBtn').addEventListener('click', ()=>{
+  out.select(); navigator.clipboard.writeText(out.value).then(()=>{
+    const b=document.getElementById('copyBtn'); b.textContent='Copied ✓'; setTimeout(()=>b.textContent='Copy anchors',1200);
+  });
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  data[sil] = JSON.parse(JSON.stringify(DEFAULTS[sil])); save(); render();
+});
+
+render();
+</script>
+</body>
+</html>

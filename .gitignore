@@ -3,3 +3,7 @@ node_modules/
 backend/.venv/
 __pycache__/
 *.pyc
+
+# local safety backups (not for deploy)
+assets/_artifact_backup/
+assets/_neck_backup/

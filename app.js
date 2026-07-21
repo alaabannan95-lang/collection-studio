@@ -12,6 +12,7 @@ const state = {
   selectedPrintId: null,
   seams: {}, // { partId: finishId } for the current garment's silhouette
   tab: 'color',
+  measureOverrides: {}, // { garmentId: { rowIndex: { size: value } } } manual measure edits
 };
 
 function seamPartsFor(g) {
@@ -52,13 +53,17 @@ function currentGarment() {
   return GARMENTS.find(g => g.id === state.garmentId);
 }
 
+// Every garment now offers the full range; XS/XXL and any un-sampled middle
+// sizes are graded estimates (see gradeRowValues) that Alaa can override.
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
 function availableSizes(g) {
-  return Object.keys(g.sizes);
+  return SIZES;
 }
 
 function init() {
   const g = currentGarment();
-  state.size = availableSizes(g)[0];
+  state.measureOverrides = loadMeasureOverrides();
+  state.size = 'M';
   state.color = g.colorway.hex;
   state.gsm = g.gsm != null ? g.gsm : null;
   state.fabric = g.fabric || FABRICS[0];
@@ -82,7 +87,7 @@ function init() {
 function selectGarment(id) {
   state.garmentId = id;
   const g = currentGarment();
-  state.size = availableSizes(g)[0];
+  state.size = SIZES.includes(state.size) ? state.size : 'M';
   state.color = g.colorway.hex;
   state.gsm = g.gsm != null ? g.gsm : null;
   state.fabric = g.fabric || FABRICS[0];
@@ -190,7 +195,7 @@ function renderSwatchGrid(container, activeHex, onPick) {
     const box = document.createElement('div');
     box.className = 'swatch' + (activeHex && activeHex.toLowerCase() === sw.hex.toLowerCase() ? ' active' : '');
     box.style.background = sw.hex;
-    box.title = `${sw.name} (${sw.pantone})`;
+    box.title = sw.pantone ? `${sw.name} (${sw.pantone})` : `${sw.name} · Brand`;
     box.addEventListener('click', () => onPick(sw.hex));
     const label = document.createElement('div');
     label.className = 'swatch-label';
@@ -256,6 +261,40 @@ function bindGlobalControls() {
   document.getElementById('useLogoBtn').addEventListener('click', () => {
     fetchAsDataURL(LOGO_PATH).then(src => addPrintLayer(src, 'SOAP logo')).catch(() => alert('Could not load assets/logo.png'));
   });
+
+  // Text-as-print
+  populateFontSelect(document.getElementById('printFontSelect'), 'Roboto Condensed');
+  const addTextBtn = document.getElementById('addTextBtn');
+  if (addTextBtn) addTextBtn.addEventListener('click', () => {
+    const input = document.getElementById('printTextInput');
+    const font = document.getElementById('printFontSelect').value;
+    addTextLayer(input.value, font);
+    input.value = '';
+  });
+  const printTextInput = document.getElementById('printTextInput');
+  if (printTextInput) printTextInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addTextBtn.click(); }
+  });
+  const editTextInput = document.getElementById('editTextInput');
+  if (editTextInput) editTextInput.addEventListener('input', e => {
+    const p = selectedPrint();
+    if (p && p.type === 'text') { p.text = e.target.value; refreshTextLayer(p); }
+  });
+  const editFontSelect = document.getElementById('editFontSelect');
+  if (editFontSelect) editFontSelect.addEventListener('change', e => {
+    const p = selectedPrint();
+    if (p && p.type === 'text') { p.fontName = e.target.value; refreshTextLayer(p); }
+  });
+  const editWeightSelect = document.getElementById('editWeightSelect');
+  if (editWeightSelect) editWeightSelect.addEventListener('change', e => {
+    const p = selectedPrint();
+    if (p && p.type === 'text') { p.weight = e.target.value; refreshTextLayer(p); }
+  });
+  const editItalic = document.getElementById('editItalic');
+  if (editItalic) editItalic.addEventListener('change', e => {
+    const p = selectedPrint();
+    if (p && p.type === 'text') { p.italic = e.target.checked; refreshTextLayer(p); }
+  });
   document.getElementById('removePrintBtn').addEventListener('click', () => {
     removePrintLayer(state.selectedPrintId);
   });
@@ -317,6 +356,120 @@ function fetchAsDataURL(path) {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     }));
+}
+
+// ---------- Text as a print layer ----------
+// Text is rendered to a transparent canvas (black glyphs) and then treated as a
+// normal print layer: same drag/scale/rotate/opacity, the print-color picker
+// tints it like a single-ink print, and it exports in the tech pack unchanged
+// because it rides through as an image data URL.
+// Weights offered for text prints. Fonts that carry the weight/italic (the
+// brand Roboto / Roboto Condensed carry all of them) render it for real; a
+// single-weight display font falls back to what it has.
+const TEXT_WEIGHTS = [['100', 'Thin'], ['300', 'Light'], ['400', 'Regular'], ['500', 'Medium'], ['600', 'SemiBold'], ['700', 'Bold'], ['900', 'Black']];
+
+const _loadedFonts = {};
+function ensureFont(name, weight, italic) {
+  weight = weight || '400';
+  const ital = italic ? 1 : 0;
+  const key = `${name}|${weight}|${ital}`;
+  if (_loadedFonts[key]) return _loadedFonts[key];
+  // Load the exact weight+italic variant on demand (one <link> per variant, so
+  // an unavailable variant fails harmlessly instead of blocking the family).
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${name.replace(/ /g, '+')}:ital,wght@${ital},${weight}&display=swap`;
+  document.head.appendChild(link);
+  const spec = `${italic ? 'italic ' : ''}${weight} 48px "${name}"`;
+  _loadedFonts[key] = (document.fonts && document.fonts.load)
+    ? document.fonts.load(spec).then(() => {}).catch(() => {})
+    : Promise.resolve();
+  return _loadedFonts[key];
+}
+
+function renderTextCanvas(text, fontName, weight, italic) {
+  const base = 240;                        // hi-res cap height for crisp print
+  const pad = Math.round(base * 0.28);
+  const lineH = base * 1.28;
+  const lines = (text || ' ').split('\n');
+  const font = `${italic ? 'italic ' : ''}${weight || '400'} ${base}px "${fontName}", sans-serif`;
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = font;
+  let maxW = 1;
+  lines.forEach(l => { maxW = Math.max(maxW, meas.measureText(l || ' ').width); });
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(maxW) + pad * 2;
+  c.height = Math.ceil(lineH * lines.length) + pad * 2;
+  const ctx = c.getContext('2d');
+  ctx.font = font;
+  ctx.fillStyle = '#000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + i * lineH));
+  return c;
+}
+
+function textLayerName(text) {
+  const t = (text || 'Text').replace(/\n/g, ' ');
+  return t.length > 22 ? t.slice(0, 22) + '…' : t;
+}
+
+async function addTextLayer(text, fontName, weight, italic) {
+  const t = (text || '').trim();
+  if (!t) return;
+  weight = weight || '400'; italic = !!italic;
+  await ensureFont(fontName, weight, italic);
+  const src = renderTextCanvas(t, fontName, weight, italic).toDataURL('image/png');
+  const img = new Image();
+  img.onload = () => {
+    const g = currentGarment();
+    const view = state.view;
+    const placement = defaultPrintPlacement(g, view, 18);
+    const layer = {
+      id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: textLayerName(t),
+      src, img, view,
+      x: placement.x, y: placement.y, scale: placement.scale, rotation: 0, opacity: 1,
+      color: null, tintedCanvas: null, method: 'screen',
+      type: 'text', text: t, fontName, weight, italic,
+    };
+    state.prints.push(layer);
+    state.selectedPrintId = layer.id;
+    renderPrintTab();
+    paintStage();
+  };
+  img.src = src;
+}
+
+// Re-render a selected text layer in place after its text or font changed,
+// keeping placement, scale, rotation, opacity and any chosen print color.
+async function refreshTextLayer(layer) {
+  if (!layer || layer.type !== 'text') return;
+  await ensureFont(layer.fontName, layer.weight, layer.italic);
+  layer.src = renderTextCanvas(layer.text || ' ', layer.fontName, layer.weight, layer.italic).toDataURL('image/png');
+  layer.name = textLayerName(layer.text);
+  const img = new Image();
+  img.onload = () => {
+    layer.img = img;
+    if (layer.color) applyPrintTint(layer);
+    renderPrintTab();
+    paintStage();
+  };
+  img.src = layer.src;
+}
+
+function populateFontSelect(sel, selected) {
+  if (!sel) return;
+  sel.innerHTML = PRINT_FONTS.map(f =>
+    `<option value="${f.name}"${f.name === selected ? ' selected' : ''}>${f.name}${f.brand ? ' (brand)' : ''}</option>`
+  ).join('');
+}
+
+function populateWeightSelect(sel, val) {
+  if (!sel) return;
+  sel.innerHTML = TEXT_WEIGHTS.map(([v, n]) =>
+    `<option value="${v}"${v === String(val || '400') ? ' selected' : ''}>${n}</option>`
+  ).join('');
 }
 
 // ---------- Real-world print placement (calibrated to actual cm) ----------
@@ -453,6 +606,19 @@ function renderPrintTab() {
   const selValid = sel && sel.view === state.view;
   document.getElementById('printControls').style.display = selValid ? 'block' : 'none';
   if (selValid) {
+    const teg = document.getElementById('textEditGroup');
+    if (teg) {
+      if (sel.type === 'text') {
+        teg.style.display = 'block';
+        const eti = document.getElementById('editTextInput');
+        if (eti && document.activeElement !== eti) eti.value = sel.text || '';
+        populateFontSelect(document.getElementById('editFontSelect'), sel.fontName);
+        populateWeightSelect(document.getElementById('editWeightSelect'), sel.weight || '400');
+        const ei = document.getElementById('editItalic'); if (ei) ei.checked = !!sel.italic;
+      } else {
+        teg.style.display = 'none';
+      }
+    }
     document.querySelectorAll('#methodToggle button').forEach(b => {
       b.classList.toggle('active', b.dataset.method === (sel.method || 'embroidery'));
     });
@@ -491,6 +657,70 @@ function placementInfoText(p) {
 }
 
 // ---------- Measurements tab ----------
+// Per-measure default grade increment (cm per size step) used ONLY when a row
+// has a single sampled size, so XS-XXL can still be estimated. When a row has
+// two or more sampled sizes, the step is derived from the garment's own grade.
+function pomStep(label) {
+  const l = (label || '').toLowerCase();
+  if (/rib|cuff|waistband|elastic|collar width|neck rib|to stitch/.test(l)) return 0;
+  if (/chest|pit to pit|armhole to armhole|bust/.test(l)) return 2.5;
+  if (/shoulder/.test(l)) return 0.6;
+  if (/sleeve/.test(l)) return 1.0;
+  if (/hood/.test(l)) return 0.5;
+  if (/pocket/.test(l)) return 0.5;
+  if (/neck/.test(l)) return 0.5;
+  if (/armhole/.test(l)) return 1.0;
+  if (/hem|bottom opening/.test(l)) return 1.5;
+  if (/length|hsp|cf|center back|drop/.test(l)) return 1.5;
+  return 1.0;
+}
+
+// Grade one POM row to all six sizes. Sampled sizes are kept verbatim (may be
+// strings like "2 or 2.5"); missing sizes are extrapolated from the nearest
+// sampled size using the derived (or default) step. Returns { size: value }.
+function gradeRowValues(row) {
+  const known = [];
+  SIZES.forEach((s, i) => { const v = parseFloat(row[s]); if (!isNaN(v)) known.push({ i, s, v }); });
+  const out = {};
+  if (!known.length) return out;
+  let step;
+  if (known.length >= 2) { const a = known[0], b = known[known.length - 1]; step = (b.v - a.v) / (b.i - a.i); }
+  else step = pomStep(row.label);
+  SIZES.forEach((s, i) => {
+    const k = known.find(o => o.i === i);
+    if (k) { out[s] = row[s]; return; }
+    const near = known.reduce((a, b) => Math.abs(b.i - i) < Math.abs(a.i - i) ? b : a);
+    const v = Math.round((near.v + (i - near.i) * step) * 10) / 10;
+    out[s] = v > 0 ? v : '';
+  });
+  return out;
+}
+
+// Full XS-XXL size grid (graded values + any manual overrides) for export, so
+// the tech pack's size chart always shows exactly what the Measure tab shows.
+function buildSizeGrid(g) {
+  const ov = state.measureOverrides[g.id] || {};
+  const rows = g.pom.map((row, ri) => {
+    const graded = gradeRowValues(row);
+    const values = {};
+    SIZES.forEach(s => {
+      const has = ov[ri] && ov[ri][s] != null;
+      const v = has ? ov[ri][s] : (graded[s] != null ? graded[s] : '');
+      values[s] = v === '' ? '' : String(v);
+    });
+    return { label: row.label, values };
+  });
+  return { headers: SIZES.slice(), rows };
+}
+
+const MEASURE_KEY = 'soap_studio_measures';
+function loadMeasureOverrides() {
+  try { return JSON.parse(localStorage.getItem(MEASURE_KEY) || '{}'); } catch (e) { return {}; }
+}
+function saveMeasureOverrides() {
+  try { localStorage.setItem(MEASURE_KEY, JSON.stringify(state.measureOverrides)); } catch (e) {}
+}
+
 function renderMeasureTab() {
   const g = currentGarment();
   document.getElementById('dateInput').value = state.date || todayISO();
@@ -502,23 +732,41 @@ function renderMeasureTab() {
   const washSel = document.getElementById('washInput');
   washSel.innerHTML = WASHES.map(w => `<option value="${w}">${w}</option>`).join('');
   washSel.value = state.wash || WASHES[0];
+
+  const ov = state.measureOverrides[g.id] || {};
   const wrap = document.getElementById('measureTable');
-  const sizes = availableSizes(g);
   let html = '<table class="pom"><thead><tr><th>Point of measure</th>';
-  sizes.forEach(s => html += `<th class="num">${s}</th>`);
+  SIZES.forEach(s => html += `<th class="num${s === state.size ? ' active-size' : ''}">${s}</th>`);
   html += '</tr></thead><tbody>';
-  g.pom.forEach(row => {
+  g.pom.forEach((row, ri) => {
+    const graded = gradeRowValues(row);
     html += `<tr><td>${row.label}</td>`;
-    sizes.forEach(s => {
-      const v = row[s];
-      html += `<td class="num">${v !== undefined ? v + ' cm' : '–'}</td>`;
+    SIZES.forEach(s => {
+      const has = ov[ri] && ov[ri][s] != null;
+      const val = has ? ov[ri][s] : (graded[s] != null ? graded[s] : '');
+      const cls = 'num' + (s === state.size ? ' active-size' : '');
+      html += `<td class="${cls}"><input class="pom-input" data-row="${ri}" data-size="${s}" value="${val === '' ? '' : String(val)}" spellcheck="false"></td>`;
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
-  document.getElementById('measureNote').textContent = g.note || '';
-  document.getElementById('measureNote').style.display = g.note ? 'block' : 'none';
+
+  wrap.querySelectorAll('input.pom-input').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const ri = inp.dataset.row, s = inp.dataset.size, v = inp.value.trim();
+      state.measureOverrides[g.id] = state.measureOverrides[g.id] || {};
+      state.measureOverrides[g.id][ri] = state.measureOverrides[g.id][ri] || {};
+      if (v === '') delete state.measureOverrides[g.id][ri][s];
+      else state.measureOverrides[g.id][ri][s] = v;
+      saveMeasureOverrides();
+    });
+  });
+
+  const note = document.getElementById('measureNote');
+  note.textContent = (g.note ? g.note + '  ' : '') +
+    'Sizes without a sampled measurement are graded estimates — type in any cell to lock your own number (saved on this computer).';
+  note.style.display = 'block';
 }
 
 // ---------- Seams tab ----------
@@ -718,8 +966,20 @@ function bindStageInteraction() {
       const layer = selectedPrint();
       if (layer) {
         const dx = p.x - dragState.startX, dy = p.y - dragState.startY;
-        layer.x = clamp(dragState.origX + dx / zone.w, -0.5, 1.5);
-        layer.y = clamp(dragState.origY + dy / zone.h, -0.5, 1.5);
+        const nx = dragState.origX + dx / zone.w;
+        const ny = dragState.origY + dy / zone.h;
+        // Free placement: the print can go anywhere over the garment, the same
+        // for every product. Bounds derive from each garment's own canvas + zone
+        // (so the limit no longer varies collection to collection). We allow the
+        // center to travel a margin past every image edge so it never hits a wall
+        // before the hem/sleeve, but not so far it gets lost off-canvas. The
+        // real-cm readout and tech pack export use this same x/y, so they stay
+        // accurate at any position.
+        const nxFor = cx => 0.5 + (cx - zone.x - zone.w / 2) / zone.w;
+        const nyFor = cy => 0.5 + (cy - zone.y - zone.h / 2) / zone.h;
+        const mx = canvas.width * 0.25, my = canvas.height * 0.25;
+        layer.x = clamp(nx, nxFor(-mx), nxFor(canvas.width + mx));
+        layer.y = clamp(ny, nyFor(-my), nyFor(canvas.height + my));
         document.getElementById('printPlacementInfo').textContent = placementInfoText(layer);
         paintStage();
       }
@@ -896,6 +1156,7 @@ async function downloadTechpack() {
       .map(part => ({ ...part, finish: seamStateFor(part).finish, on: seamStateFor(part).on }))
       .filter(part => part.on),
     seamFinishes: SEAM_FINISHES,
+    sizeGrid: buildSizeGrid(g),
   };
 
   btn.disabled = true;
@@ -996,6 +1257,8 @@ function saveCurrentDesign() {
       name: p.name, src: p.src, view: p.view, x: p.x, y: p.y,
       scale: p.scale, rotation: p.rotation, opacity: p.opacity, color: p.color,
       method: p.method || 'embroidery',
+      type: p.type || null, text: p.text || null, fontName: p.fontName || null,
+      weight: p.weight || null, italic: p.italic || false,
     })),
   };
   const list = loadDesignsFromStorage();
@@ -1016,7 +1279,7 @@ function loadDesignById(id) {
 
   state.garmentId = design.garmentId;
   const g = currentGarment();
-  state.size = design.size && g.sizes[design.size] ? design.size : availableSizes(g)[0];
+  state.size = SIZES.includes(design.size) ? design.size : 'M';
   state.view = design.view === 'back' ? 'back' : 'front';
   state.color = design.color || g.colorway.hex;
   state.gsm = design.gsm != null ? design.gsm : (g.gsm != null ? g.gsm : null);
@@ -1045,6 +1308,8 @@ function loadDesignById(id) {
         name: pd.name, src: pd.src, img, view: pd.view === 'back' ? 'back' : 'front',
         x: pd.x, y: pd.y, scale: pd.scale, rotation: pd.rotation, opacity: pd.opacity,
         color: pd.color || null, tintedCanvas: null, method: pd.method || 'embroidery',
+        type: pd.type || null, text: pd.text || null, fontName: pd.fontName || null,
+        weight: pd.weight || null, italic: pd.italic || false,
       };
       if (layer.color) applyPrintTint(layer);
       state.prints.push(layer);

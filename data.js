@@ -27,15 +27,15 @@ const CALIBRATION = {
     back:  { w: 1033, h: 1014, pxPerCm: 11.202, hspY: 73, centerX: 516.5 },
   },
   'tee-burgundy': {
-    front: { w: 1017, h: 965, pxPerCm: 9.916, hspY: 21, centerX: 500.5 },
+    front: { w: 1031, h: 1011, pxPerCm: 11.353, hspY: 37, centerX: 496.0 },
     back:  { w: 1032, h: 1011, pxPerCm: 11.042, hspY: 71, centerX: 515.5 },
   },
   'tank': {
-    front: { w: 768, h: 1099, pxPerCm: 12.564, hspY: 12, centerX: 383.5 },
+    front: { w: 768, h: 1145, pxPerCm: 12.564, hspY: 58, centerX: 383.5 },
     back:  { w: 768, h: 1145, pxPerCm: 12.564, hspY: 57, centerX: 383.5 },
   },
   'longsleeve': {
-    front: { w: 1060, h: 1103, pxPerCm: 15.983, hspY: 54, centerX: 548.0 },
+    front: { w: 1060, h: 1149, pxPerCm: 15.95, hspY: 100, centerX: 548.0 },
     back:  { w: 923, h: 997, pxPerCm: 13.714, hspY: 38, centerX: 442.0 },
   },
   'jacket': {
@@ -47,23 +47,76 @@ const CALIBRATION = {
     back:  { w: 941, h: 1038, pxPerCm: 12.754, hspY: 191, centerX: 470.0 },
   },
   'crewneck': {
-    front: { w: 975, h: 965, pxPerCm: 13.746, hspY: 53, centerX: 487.0 },
+    front: { w: 975, h: 1011, pxPerCm: 13.61, hspY: 98, centerX: 487.0 },
     back:  { w: 975, h: 1010, pxPerCm: 13.593, hspY: 97, centerX: 487.0 },
   },
 };
 
+// Every SOAP brand color, selectable as a garment body color OR a print color.
+// Group 1: the locked collection colorways (Pantone TCX, from context/business.md).
+// Group 2: The Foundation brand palette (brand/figma_brief.md §Palette) -- digital
+// brand colors, no TCX code (production would match to TCX at sampling if used).
 const BRAND_SWATCHES = [
-  { name: 'Navy Blazer',    pantone: '19-3923 TCX', hex: '#282D3C' },
-  { name: 'Burgundy',       pantone: '19-1617 TCX', hex: '#64313E' },
-  { name: 'Quiet Shade',    pantone: '18-4006 TCX', hex: '#66676D' },
-  { name: 'Classic Blue',   pantone: '19-4052 TCX', hex: '#0F4C81' },
-  { name: 'Pastel Yellow',  pantone: '11-0616 TCX', hex: '#F2E6B1' },
-  { name: 'Bright White',   pantone: '11-0601 TCX', hex: '#F4F5F0' },
-  { name: "Baby's Breath",  pantone: '11-0202 TCX', hex: '#E9E2D1' },
+  // --- Collection colorways ---
+  { name: 'Navy Blazer',    pantone: '19-3923 TCX', hex: '#282D3C', group: 'Collection' },
+  { name: 'Burgundy',       pantone: '19-1617 TCX', hex: '#64313E', group: 'Collection' },
+  { name: 'Quiet Shade',    pantone: '18-4006 TCX', hex: '#66676D', group: 'Collection' },
+  { name: 'Classic Blue',   pantone: '19-4052 TCX', hex: '#0F4C81', group: 'Collection' },
+  { name: 'Pastel Yellow',  pantone: '11-0616 TCX', hex: '#F2E6B1', group: 'Collection' },
+  { name: 'Bright White',   pantone: '11-0601 TCX', hex: '#F4F5F0', group: 'Collection' },
+  { name: "Baby's Breath",  pantone: '11-0202 TCX', hex: '#E9E2D1', group: 'Collection' },
+  // --- The Foundation brand palette ---
+  { name: 'Signal Red',     pantone: null, hex: '#7F0304', group: 'Foundation' },
+  { name: 'Ink',            pantone: null, hex: '#2A2A2A', group: 'Foundation' },
+  { name: 'Walnut',         pantone: null, hex: '#5C4A3B', group: 'Foundation' },
+  { name: 'Mint Sage',      pantone: null, hex: '#AECCC3', group: 'Foundation' },
+  { name: 'Powder Blue',    pantone: null, hex: '#C8D8E0', group: 'Foundation' },
+  { name: 'Sky Blue',       pantone: null, hex: '#5E83AE', group: 'Foundation' },
+  { name: 'Charcoal',       pantone: null, hex: '#6B6B6B', group: 'Foundation' },
+  { name: 'Mid Grey',       pantone: null, hex: '#AAAAAA', group: 'Foundation' },
+  { name: 'Light Grey',     pantone: null, hex: '#F0F0F0', group: 'Foundation' },
+  { name: 'Cream Warm',     pantone: null, hex: '#F9F5ED', group: 'Foundation' },
+  { name: 'Cream Pale',     pantone: null, hex: '#F0EDE4', group: 'Foundation' },
+  { name: 'Cream Soft',     pantone: null, hex: '#F0EEDF', group: 'Foundation' },
 ];
 
-// Fabric constructions offered in the studio.
-const FABRICS = ['Cotton Fleece', 'Cotton Terry'];
+// Fabric constructions offered in the studio. Curated from common premium
+// streetwear construction (knits for tops/sweats, wovens for outerwear/bottoms,
+// plus blends). 'Cotton Fleece' and 'Cotton Terry' stay first as the current
+// collection defaults referenced by the garments below.
+const FABRICS = [
+  // Knits (tees, sweats, hoodies)
+  'Cotton Fleece',
+  'Cotton Terry',
+  'French Terry',
+  'Brushed-Back Fleece',
+  'Loopback Terry',
+  'Cotton Jersey',
+  'Combed Ringspun Jersey',
+  'Heavyweight Jersey',
+  'Slub Jersey',
+  'Waffle Knit (Thermal)',
+  'Rib Knit',
+  'Piqué',
+  'Interlock',
+  'Sherpa Fleece',
+  // Wovens (jackets, shirts, bottoms)
+  'Cotton Twill',
+  'Brushed Twill',
+  'Cotton Canvas',
+  'Duck Canvas',
+  'Ripstop',
+  'Corduroy',
+  'Denim',
+  'Oxford Cotton',
+  'Poplin',
+  'Nylon Shell',
+  'Melton Wool',
+  // Blends
+  'Poly-Cotton Blend',
+  'Tri-Blend',
+  'Cotton-Spandex Jersey',
+];
 
 // Garment wash / finish offered in the studio. 'Raw' = no wash. The rest are
 // applied to the cut-and-sewn garment; 'Pigment / garment dye' is the faded,
@@ -82,7 +135,7 @@ const WASHES = [
 const GARMENTS = [
   {
     id: 'tee-navy',
-    name: 'Navy Tee',
+    name: 'Tee',
     category: 'T-Shirt',
     refNo: '6',
     season: 'FW26',
@@ -107,7 +160,7 @@ const GARMENTS = [
   },
   {
     id: 'tee-burgundy',
-    name: 'Burgundy Tee',
+    name: 'Tee',
     category: 'T-Shirt',
     refNo: '9',
     season: 'FW26',
@@ -132,7 +185,7 @@ const GARMENTS = [
   },
   {
     id: 'tank-quiet-shade',
-    name: 'Quiet Shade Tank',
+    name: 'Tank',
     category: 'Tank Top',
     refNo: '7',
     season: 'SS26',
@@ -162,7 +215,7 @@ const GARMENTS = [
   },
   {
     id: 'longsleeve-navy',
-    name: 'Navy Long Sleeve',
+    name: 'Long Sleeve',
     category: 'Long Sleeve',
     refNo: '8',
     season: 'SS26',
@@ -191,7 +244,7 @@ const GARMENTS = [
   },
   {
     id: 'jacket-burgundy',
-    name: 'Burgundy Jacket',
+    name: 'Jacket',
     category: 'Jacket',
     refNo: '5',
     season: 'FW26',
@@ -424,55 +477,118 @@ const SEAM_FINISHES = [
  */
 const SEAM_PARTS = {
   tee: [
-    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.55, y: 0.05 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.34, y: 0.10 } },
-    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.24, y: 0.16 } },
-    { id: 'sleeve',      label: 'Sleeve hem',     finish: 'double-topstitch', side: 'left',  on: true, anchor: { x: 0.10, y: 0.30 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.80, y: 0.52 } },
-    { id: 'hem',         label: 'Bottom hem',     finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.50, y: 0.93 } },
+    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.5, y: 0.118 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.271, y: 0.099 } },
+    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.162, y: 0.2 } },
+    { id: 'sleeve',      label: 'Sleeve hem',     finish: 'double-topstitch', side: 'left',  on: true, anchor: { x: 0.077, y: 0.545 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.777, y: 0.665 } },
+    { id: 'hem',         label: 'Bottom hem',     finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.5, y: 0.94 } },
   ],
   tank: [
-    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.56, y: 0.06 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.35, y: 0.09 } },
-    { id: 'armhole',     label: 'Armhole',        finish: 'double-topstitch', side: 'left',  on: true, anchor: { x: 0.22, y: 0.24 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.78, y: 0.55 } },
-    { id: 'hem',         label: 'Bottom hem',     finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.50, y: 0.94 } },
+    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.512, y: 0.176 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.169, y: 0.083 } },
+    { id: 'armhole',     label: 'Armhole',        finish: 'double-topstitch', side: 'left',  on: true, anchor: { x: 0.14, y: 0.299 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.948, y: 0.561 } },
+    { id: 'hem',         label: 'Bottom hem',     finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.5, y: 0.94 } },
   ],
   longsleeve: [
-    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.55, y: 0.05 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.34, y: 0.10 } },
-    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.24, y: 0.17 } },
-    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.08, y: 0.62 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.80, y: 0.52 } },
-    { id: 'hem',         label: 'Bottom hem',     finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.50, y: 0.93 } },
+    { id: 'neck',        label: 'Neckline',       finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.497, y: 0.052 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.261, y: 0.093 } },
+    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.161, y: 0.194 } },
+    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.089, y: 0.953 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.803, y: 0.618 } },
+    { id: 'hem',         label: 'Bottom hem',     finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.515, y: 0.925 } },
   ],
   crewneck: [
-    { id: 'neck',        label: 'Rib collar',     finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.55, y: 0.05 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.34, y: 0.10 } },
-    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.24, y: 0.17 } },
-    { id: 'cuff',        label: 'Rib cuff',       finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.08, y: 0.62 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.80, y: 0.52 } },
-    { id: 'hem',         label: 'Rib hem',        finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.50, y: 0.93 } },
+    { id: 'neck',        label: 'Rib collar',     finish: 'neck-rib',         side: 'right', on: true, anchor: { x: 0.5, y: 0.05 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.293, y: 0.101 } },
+    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.22, y: 0.19 } },
+    { id: 'cuff',        label: 'Rib cuff',       finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.11, y: 0.88 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.774, y: 0.584 } },
+    { id: 'hem',         label: 'Rib hem',        finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.5, y: 0.79 } },
   ],
   hoodie: [
-    { id: 'hood',        label: 'Hood',           finish: 'hood-seam',        side: 'right', on: true, anchor: { x: 0.55, y: 0.07 } },
-    { id: 'neck',        label: 'Neckline',       finish: 'hoodie-neck',      side: 'right', on: true, anchor: { x: 0.58, y: 0.22 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.34, y: 0.20 } },
-    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.19, y: 0.28 } },
-    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.10, y: 0.80 } },
+    { id: 'hood',        label: 'Hood',           finish: 'hood-seam',        side: 'right', on: true, anchor: { x: 0.5, y: 0.06 } },
+    { id: 'neck',        label: 'Neckline',       finish: 'hoodie-neck',      side: 'right', on: true, anchor: { x: 0.5, y: 0.19 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.27, y: 0.171 } },
+    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.2, y: 0.28 } },
+    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.11, y: 0.89 } },
     { id: 'pocket',      label: 'Pocket',         finish: 'pocket-double',    side: 'left',  on: true, anchor: { x: 0.38, y: 0.66 } },
-    { id: 'hem',         label: 'Hem band',       finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.55, y: 0.90 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.82, y: 0.55 } },
+    { id: 'hem',         label: 'Hem band',       finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.5, y: 0.81 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.776, y: 0.603 } },
   ],
   jacket: [
-    { id: 'hood',        label: 'Hood',           finish: 'hood-seam',        side: 'right', on: true, anchor: { x: 0.55, y: 0.09 } },
-    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.34, y: 0.22 } },
-    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.24, y: 0.28 } },
-    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.10, y: 0.66 } },
-    { id: 'pocket',      label: 'Pocket',         finish: 'pocket-double',    side: 'left',  on: true, anchor: { x: 0.36, y: 0.68 } },
-    { id: 'hem',         label: 'Hem band',       finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.55, y: 0.86 } },
-    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.82, y: 0.58 } },
+    { id: 'hood',        label: 'Hood',           finish: 'hood-seam',        side: 'right', on: true, anchor: { x: 0.5, y: 0.07 } },
+    { id: 'shoulder',    label: 'Shoulder seam',  finish: 'taped-shoulder',   side: 'left',  on: true, anchor: { x: 0.232, y: 0.156 } },
+    { id: 'sleeve-join', label: 'Sleeve join',    finish: 'sleeve-attach',    side: 'left',  on: true, anchor: { x: 0.23, y: 0.26 } },
+    { id: 'cuff',        label: 'Cuff',           finish: 'ribbed-cuff',      side: 'left',  on: true, anchor: { x: 0.099, y: 0.893 } },
+    { id: 'pocket',      label: 'Pocket',         finish: 'pocket-double',    side: 'left',  on: true, anchor: { x: 0.36, y: 0.66 } },
+    { id: 'hem',         label: 'Hem band',       finish: 'ribbed-hem',       side: 'right', on: true, anchor: { x: 0.5, y: 0.81 } },
+    { id: 'side',        label: 'Side seam',      finish: 'double-topstitch', side: 'right', on: true, anchor: { x: 0.762, y: 0.689 } },
   ],
 };
 
 const LOGO_PATH = 'assets/logo.png';
+
+// Fonts offered by the Print tab's text tool. Brand fonts first (already loaded
+// in the page head), then a curated set across categories, loaded on demand from
+// Google Fonts the first time each is used. `name` is the exact CSS family.
+const PRINT_FONTS = [
+  { name: 'Roboto Condensed', cat: 'Brand',     brand: true },
+  { name: 'Roboto',           cat: 'Brand',     brand: true },
+  { name: 'Shrikhand',        cat: 'Brand',     brand: true },
+  // Display / heavy
+  { name: 'Anton',            cat: 'Display' },
+  { name: 'Bebas Neue',       cat: 'Display' },
+  { name: 'Oswald',           cat: 'Display' },
+  { name: 'Archivo Black',    cat: 'Display' },
+  { name: 'Alfa Slab One',    cat: 'Display' },
+  { name: 'Staatliches',      cat: 'Display' },
+  { name: 'Teko',             cat: 'Display' },
+  { name: 'Fjalla One',       cat: 'Display' },
+  { name: 'Passion One',      cat: 'Display' },
+  { name: 'Titan One',        cat: 'Display' },
+  { name: 'Bungee',           cat: 'Display' },
+  { name: 'Righteous',        cat: 'Display' },
+  { name: 'Black Ops One',    cat: 'Display' },
+  { name: 'Monoton',          cat: 'Display' },
+  { name: 'Rubik Mono One',   cat: 'Display' },
+  { name: 'Unbounded',        cat: 'Display' },
+  { name: 'Syne',             cat: 'Display' },
+  { name: 'Orbitron',         cat: 'Display' },
+  { name: 'Chakra Petch',     cat: 'Display' },
+  // Sans
+  { name: 'Inter',            cat: 'Sans' },
+  { name: 'Montserrat',       cat: 'Sans' },
+  { name: 'Poppins',          cat: 'Sans' },
+  { name: 'Work Sans',        cat: 'Sans' },
+  { name: 'DM Sans',          cat: 'Sans' },
+  { name: 'Manrope',          cat: 'Sans' },
+  { name: 'Barlow',           cat: 'Sans' },
+  { name: 'Barlow Condensed', cat: 'Sans' },
+  { name: 'Rubik',            cat: 'Sans' },
+  { name: 'Archivo',          cat: 'Sans' },
+  { name: 'Josefin Sans',     cat: 'Sans' },
+  { name: 'Space Grotesk',    cat: 'Sans' },
+  { name: 'Sora',             cat: 'Sans' },
+  // Serif
+  { name: 'Playfair Display', cat: 'Serif' },
+  { name: 'DM Serif Display', cat: 'Serif' },
+  { name: 'Libre Baskerville', cat: 'Serif' },
+  { name: 'Lora',             cat: 'Serif' },
+  { name: 'Cormorant Garamond', cat: 'Serif' },
+  { name: 'EB Garamond',      cat: 'Serif' },
+  { name: 'Bodoni Moda',      cat: 'Serif' },
+  { name: 'Abril Fatface',    cat: 'Serif' },
+  // Mono
+  { name: 'Space Mono',       cat: 'Mono' },
+  { name: 'JetBrains Mono',   cat: 'Mono' },
+  { name: 'IBM Plex Mono',    cat: 'Mono' },
+  { name: 'Roboto Mono',      cat: 'Mono' },
+  // Script / hand
+  { name: 'Pacifico',         cat: 'Script' },
+  { name: 'Caveat',           cat: 'Script' },
+  { name: 'Dancing Script',   cat: 'Script' },
+  { name: 'Satisfy',          cat: 'Script' },
+  { name: 'Permanent Marker', cat: 'Script' },
+];
