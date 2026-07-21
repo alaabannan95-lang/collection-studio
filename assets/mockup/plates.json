@@ -1,14 +1,21 @@
 {
   "hoodie": {
     "bottom_opening_cm": 48.0,
-    "panel": {
-      "top_cm": 8.0,
-      "bottom_cm": 45.0,
-      "half_width_cm": 22.0
-    },
     "white": {
-      "front": { "file": "base/hoodie_white_front.png" },
-      "back": { "file": "base/hoodie_white_back.png" }
+      "front": {
+        "file": "base/hoodie_white_front.png",
+        "_hsp_note": "Shoulder line, read off the plate: the silhouette jumps from 733px to 980px wide between y=322 and y=422 as the sleeves begin.",
+        "hsp_y": 400,
+        "panel": { "top_cm": 8.0, "bottom_cm": 34.0, "half_width_cm": 22.0 },
+        "_panel_note": "Stops at 34cm so it clears the kangaroo pocket, whose top edge sits about 39cm below HSP."
+      },
+      "back": {
+        "file": "base/hoodie_white_back.png",
+        "_hsp_note": "Shoulder line, read off the plate: the silhouette jumps from 674px to 890px wide between y=370 and y=470.",
+        "hsp_y": 420,
+        "panel": { "top_cm": 11.0, "bottom_cm": 52.0, "half_width_cm": 26.0 },
+        "_panel_note": "Starts at 11cm to clear the folded hood (reaches ~y=590) and runs to 52cm, filling the open back panel the way the reference graphics do."
+      }
     }
   }
 }
