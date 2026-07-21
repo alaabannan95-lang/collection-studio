@@ -63,11 +63,18 @@ def _add_fleece_texture(img, size, sigma=6.0):
 
 @pytest.fixture
 def white_on_white_plate():
-    """Near-white textured garment on a pure white background, like the front plate."""
+    """
+    Textured white garment on a pure white background, like the front plate.
+
+    Levels are measured off the real plate rather than invented: background
+    255, garment body 237. An earlier version of this fixture used 250 for the
+    garment, a 5-level difference the real plate does not have, and that made
+    the fixture fail a check the real plate passes comfortably.
+    """
     size = 256
     img = Image.new("RGB", (size, size), (255, 255, 255))
     draw = ImageDraw.Draw(img)
-    draw.polygon(_garment_polygon(size), fill=(250, 250, 250))
+    draw.polygon(_garment_polygon(size), fill=(237, 237, 237))
     return _add_fleece_texture(img.filter(ImageFilter.GaussianBlur(1)), size)
 
 
@@ -77,10 +84,10 @@ def grey_gradient_plate():
     Garment on a grey background with a horizontal gradient and a soft drop
     shadow, like the back plate.
 
-    Both details are measured from the real plate: its background runs 229 on
-    the left to 243 on the right, and the garment sits *brighter* than the
-    background rather than darker. Any approach keying on "darker than the
-    background" fails here, which is exactly what this fixture is for.
+    Every level is measured from the real plate: background 229 on the left to
+    243 on the right, garment 250, shadow 205. Note the garment sits *brighter*
+    than its background rather than darker, so any approach keying on "darker
+    than the background" fails here, which is exactly what this fixture is for.
     """
     size = 256
     ramp = np.linspace(229, 243, size).reshape(1, size)
@@ -90,7 +97,7 @@ def grey_gradient_plate():
     # Offset shadow first, then the garment on top.
     shadow = [(x + 10, y + 10) for x, y in _garment_polygon(size)]
     draw.polygon(shadow, fill=(205, 205, 205))
-    draw.polygon(_garment_polygon(size), fill=(252, 252, 252))
+    draw.polygon(_garment_polygon(size), fill=(250, 250, 250))
     return _add_fleece_texture(img.filter(ImageFilter.GaussianBlur(2)), size)
 
 

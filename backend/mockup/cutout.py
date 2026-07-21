@@ -19,9 +19,31 @@ worth recording why every brightness-based approach was rejected:
 Local contrast has none of those problems. Measured on the real plates,
 background sits between 0.1 and 2.0 levels while fleece sits between 5.3
 (front) and 9.9 (back), and the shadow is smooth, so it reads as background.
-Sweeping the threshold confirms a wide stable band: from 3.0 to 5.0 both plates
-return the same silhouette to within a few pixels, and only below 3.0 does the
-back plate start to leak.
+
+Texture alone is still slightly too permissive. It grew spurs off the hood and
+the right cuff on the back plate, in places where the plate itself is clean
+background: faint noise there averages 3.0 levels of contrast against 6.4 to
+12.8 for real fabric, close enough that individual pixels cross any threshold
+that keeps the sleeves.
+
+So texture is paired with a second, independent requirement: the pixel must
+also differ in brightness from the local background, by at least 5 levels. The
+spur regions sit within 2 levels of theirs while real fabric sits 10 to 14
+away. The background model has to account for the back plate's horizontal ramp
+for this to mean anything.
+
+That still leaves two small false positives on the back plate: a spur off the
+hood, and the drop shadow beneath the right cuff, both of which have enough
+brightness difference and enough texture to pass. A signed test was tried,
+keeping only the garment's side of the background, and made things clearly
+worse: the back plate's background is itself 14 levels brighter on the right
+than the left, so on that side background noise passes the signed test and
+grows large blocky spurs.
+
+What does separate them is shape. Both false positives hang off the silhouette
+by a narrow neck, so a morphological opening removes them while leaving the
+garment, whose narrowest real feature (a cuff) is several times wider than any
+of those necks.
 """
 
 import numpy as np
@@ -30,6 +52,15 @@ from PIL import Image, ImageFilter
 # Local contrast, in 8-bit levels, above which a pixel counts as fabric.
 # Centred in the stable band measured across both plates.
 _CONTRAST_THRESHOLD = 4.0
+# How far a pixel's brightness must sit from the local background, in either
+# direction. The back plate's garment is brighter than its background and the
+# front plate's is darker, so this can never be a signed test.
+_BRIGHTNESS_THRESHOLD = 5.0
+# Columns sampled at each edge to estimate the background.
+_EDGE = 24
+# Opening radius, in pixels on a 2048px plate. Larger than the necks joining
+# the false positives to the silhouette, far smaller than a cuff.
+_OPEN_RADIUS = 22.0
 # Radius for the local min/max used to measure contrast.
 _CONTRAST_RADIUS = 2
 # Blur-and-rethreshold radius that smooths the boundary. Fleece texture fades
@@ -38,6 +69,31 @@ _CONTRAST_RADIUS = 2
 _EDGE_SMOOTHING = 4.0
 # Softens the final edge so composites do not alias.
 _EDGE_FEATHER = 1.5
+
+
+def _background_field(grey):
+    """
+    Estimate background brightness at every pixel.
+
+    Both plates are lit flat, so their backgrounds vary smoothly and almost
+    linearly across the frame. Sampling a strip at each side and interpolating
+    between them captures that, including the back plate's 229-to-243
+    horizontal ramp, which a global or per-row constant cannot.
+
+    A high percentile within each strip, rather than the mean, keeps the
+    estimate on background even if the garment clips an edge.
+    """
+    left = np.percentile(grey[:, :_EDGE], 85, axis=1)
+    right = np.percentile(grey[:, -_EDGE:], 85, axis=1)
+
+    # Smooth vertically so plate noise does not print itself into the estimate.
+    window = max(3, grey.shape[0] // 32)
+    kernel = np.ones(window) / window
+    left = np.convolve(np.pad(left, window, mode="edge"), kernel, mode="same")[window:-window]
+    right = np.convolve(np.pad(right, window, mode="edge"), kernel, mode="same")[window:-window]
+
+    ramp = np.linspace(0.0, 1.0, grey.shape[1]).reshape(1, -1)
+    return left[:, None] * (1.0 - ramp) + right[:, None] * ramp
 
 
 def _local_contrast(image):
@@ -136,6 +192,27 @@ def _fill_holes(mask):
     return mask | (left & right & top & bottom)
 
 
+def _open(mask):
+    """
+    Morphological opening: erode, then dilate by the same amount.
+
+    Anything attached to the silhouette by a neck narrower than twice the
+    radius is severed by the erode and never comes back, while the garment
+    itself survives because its narrowest real feature, a cuff, is far wider
+    than that. Implemented as a blur-and-threshold pair, which is equivalent
+    for a round structuring element and vastly cheaper than iterating.
+    """
+    def shift(binary, amount):
+        blurred = Image.fromarray((binary * 255).astype(np.uint8)).filter(
+            ImageFilter.GaussianBlur(_OPEN_RADIUS)
+        )
+        return np.asarray(blurred, dtype=np.float32) > amount
+
+    # A high cut erodes (only deep interior survives the blur), a low cut
+    # dilates it back out to roughly the original boundary.
+    return shift(shift(mask, 190.0), 65.0)
+
+
 def extract_alpha(image):
     """
     Return the garment's alpha as float32 in [0, 1], shape (H, W).
@@ -143,9 +220,13 @@ def extract_alpha(image):
     1.0 is fully garment, 0.0 fully background, with a feathered edge between.
     """
     grey_image = image.convert("L")
+    grey = np.asarray(grey_image, dtype=np.float32)
 
     textured = _local_contrast(grey_image) > _CONTRAST_THRESHOLD
-    mask = _fill_holes(_largest_component(textured))
+    distinct = np.abs(grey - _background_field(grey)) > _BRIGHTNESS_THRESHOLD
+
+    mask = _fill_holes(_largest_component(textured & distinct))
+    mask = _open(mask)
 
     # Blur and re-threshold to smooth the boundary, then blur again to feather
     # it. Doing both in one pass would trade a clean edge for a soft one.
