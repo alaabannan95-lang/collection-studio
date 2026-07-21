@@ -424,7 +424,7 @@ async function addTextLayer(text, fontName, weight, italic) {
   img.onload = () => {
     const g = currentGarment();
     const view = state.view;
-    const placement = defaultPrintPlacement(g, view, 18);
+    const placement = defaultPrintPlacement(g, view, 18, img.naturalWidth / img.naturalHeight);
     const layer = {
       id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: textLayerName(t),
@@ -496,13 +496,19 @@ function getPrintZonePx(g, view) {
 // front) -- matches the convention already used in scripts/build_mockup.py.
 // No equivalent brand convention exists yet for back placement, so that
 // defaults to centered, a bit lower (18cm below collar) -- adjust freely.
-function defaultPrintPlacement(g, view, widthCm) {
+// `aspect` is the artwork's width/height. It is needed because offsetYcm is a
+// drop to the print's TOP edge, matching both the garment convention and what
+// placementInfoText() reports, while x/y position the print's CENTRE. Without
+// it the default sat half the print's height too low: a 12cm logo defaulted to
+// "13.2cm below collar" when 14 was asked for.
+function defaultPrintPlacement(g, view, widthCm, aspect) {
   const c = getCalib(g, view);
   const zone = getPrintZonePx(g, view);
   const offsetXcm = view === 'front' ? 8 : 0;
   const offsetYcm = view === 'front' ? 14 : 18;
+  const heightPx = (widthCm * c.pxPerCm) / aspect;
   const cx = c.centerX + offsetXcm * c.pxPerCm;
-  const cy = c.hspY + offsetYcm * c.pxPerCm;
+  const cy = c.hspY + offsetYcm * c.pxPerCm + heightPx / 2;
   return {
     x: clamp((cx - zone.x) / zone.w, 0, 1),
     y: clamp((cy - zone.y) / zone.h, 0, 1),
@@ -515,7 +521,7 @@ function addPrintLayer(src, name) {
   img.onload = () => {
     const g = currentGarment();
     const view = state.view;
-    const placement = defaultPrintPlacement(g, view, 12);
+    const placement = defaultPrintPlacement(g, view, 12, img.naturalWidth / img.naturalHeight);
     const layer = {
       id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       name: name || 'Artwork',
