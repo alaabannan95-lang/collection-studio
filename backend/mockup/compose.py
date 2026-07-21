@@ -34,10 +34,10 @@ _SCREEN_OPACITY = 0.92
 _SCREEN_EDGE_BLUR = 1.0
 _SCREEN_WEAVE = 0.08
 
-# Embroidery: raised relief and its contact shadow.
+# Embroidery: raised relief. No contact shadow: Alaa wants the logo clean of
+# any cast shadow on both methods, so the raised look comes from the relief
+# lighting on the thread alone, never from darkening the fabric beside it.
 _EMB_RELIEF = 0.45
-_EMB_SHADOW_OFFSET = 3
-_EMB_SHADOW_STRENGTH = 0.35
 _EMB_DILATE = 1
 
 
@@ -109,7 +109,7 @@ def _screen_print(ink, alpha, template):
 
 
 def _embroidery(ink, alpha, template):
-    """Raised thread: relief lighting from the alpha, plus a contact shadow."""
+    """Raised thread: relief lighting from the alpha. No cast shadow."""
     dilated = np.asarray(
         Image.fromarray((alpha * 255).astype(np.uint8)).filter(
             ImageFilter.MaxFilter(2 * _EMB_DILATE + 1)
@@ -118,7 +118,8 @@ def _embroidery(ink, alpha, template):
     ) / 255.0
 
     # Relief: light the near edge of the stitching, darken the far edge, from
-    # the height step across the thread boundary.
+    # the height step across the thread boundary. This shading lives entirely on
+    # the thread, so it reads as raised without casting onto the fabric.
     height = np.asarray(
         Image.fromarray((dilated * 255).astype(np.uint8)).filter(
             ImageFilter.GaussianBlur(2.0)
@@ -129,11 +130,7 @@ def _embroidery(ink, alpha, template):
     relief = np.clip((gx + gy) * _EMB_RELIEF * 255.0, -80, 80)
     lit = np.clip(ink + relief[:, :, None], 0, 255)
 
-    # Contact shadow: the dilated stitch mask, offset down-right, darkening the
-    # plate just outside the thread.
-    shadow = np.zeros_like(dilated)
-    shadow[_EMB_SHADOW_OFFSET:, _EMB_SHADOW_OFFSET:] = dilated[:-_EMB_SHADOW_OFFSET, :-_EMB_SHADOW_OFFSET]
-    return lit, dilated, shadow * _EMB_SHADOW_STRENGTH
+    return lit, dilated, None
 
 
 _METHODS = {"screen": _screen_print, "embroidery": _embroidery}

@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from backend.mockup.calibrate import PlateCalibration
-from backend.mockup.compose import Placement, compose, place
+from backend.mockup.compose import Placement, _rasterise, compose, place
 from backend.mockup.template import Template
 
 
@@ -122,6 +122,28 @@ def test_embroidery_and_screen_print_differ(flat_template):
     assert not np.allclose(
         np.asarray(emb.convert("RGB")), np.asarray(scr.convert("RGB")), atol=8
     )
+
+
+def test_embroidery_casts_no_shadow_beyond_the_thread(flat_template):
+    """
+    Embroidery must not darken the plate beyond the thread itself. The thread
+    body is a few pixels wider than the raster ink (it is dilated), so allow a
+    small margin around the ink and require everything past it to stay at the
+    plate's white.
+    """
+    art = _artwork(w=120, h=120, colour=(30, 30, 30, 255))
+    ink = _rasterise(flat_template, art, Placement(12.0, 14.0))[1] > 0.01
+    # Only a 1px margin, the width of the raised thread body itself. A cast
+    # shadow sits further out than that, so this margin does not hide it.
+    near_ink = np.asarray(
+        Image.fromarray((ink * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3))
+    ) > 0
+
+    emb = np.asarray(
+        compose(flat_template, art, Placement(12.0, 14.0), method="embroidery").convert("L"),
+        dtype=np.float32,
+    )
+    assert emb[~near_ink].min() > 254
 
 
 def test_transparent_artwork_only_prints_its_opaque_pixels(flat_template):
