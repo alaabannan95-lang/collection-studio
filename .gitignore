@@ -7,3 +7,12 @@ __pycache__/
 # local safety backups (not for deploy)
 assets/_artifact_backup/
 assets/_neck_backup/
+
+# mockup engine working files (regenerable, and large)
+assets/mockup/**/_cache/
+assets/mockup/**/_clean/
+assets/mockup/**/_crops/
+assets/mockup/**/_check/
+assets/mockup/**/_render/
+assets/mockup/**/_round*/
+assets/mockup/_check_cutout.png
