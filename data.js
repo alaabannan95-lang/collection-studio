@@ -30,41 +30,52 @@
  * with HSP 69px (7cm) above the real shoulder. Every cm figure the app showed,
  * and every tech pack exported before 2026-07-21, carries those errors.
  *
- * hoodie and jacket below are RECALIBRATED by backend/flats/calibrate_flats.py,
- * which derives scale from the ribbed hem band (the one body feature that
- * separates cleanly from the sleeves) and then derives HSP from the garment's
- * own front length instead of searching for it. The hoodie is cross-checked
- * against three independent POM references agreeing to within 7%.
+ * Every value below is RECALIBRATED by backend/flats/calibrate_flats.py, which
+ * uses whichever anchor a garment's drawing actually supports:
  *
- * The other five garments still hold the OLD, WRONG values: their flats have
- * no ribbed hem to anchor on, so they need their pit points measured by hand
- * before they can be corrected. Treat their cm figures as unreliable.
+ *   hooded (hoodie, jacket)  Scale from the ribbed hem band, the one body
+ *                            feature that separates cleanly from sleeves
+ *                            hanging against it. HSP is then derived from the
+ *                            garment's front length rather than searched for,
+ *                            because the hood sits above it.
+ *   unhooded (the rest)      Scale from the body's own height. With nothing
+ *                            drawn above the shoulder, the topmost inked row
+ *                            IS HSP, so both ends of the length measurement
+ *                            are directly readable.
+ *
+ * pxPerCm is per-image, so front and back legitimately differ where the two
+ * flats were extracted at different resolutions. The longsleeve's views differ
+ * by 17% and both correctly measure the garment at 69.7cm across.
+ *
+ * Regenerate with:  python3 -c "import sys; sys.path.insert(0,'.'); \
+ *   from backend.flats.calibrate_flats import calibrate_flat; ..."
+ * and re-run tests/test_flat_calibration.py, which checks each scale against
+ * independent point-of-measure references rather than trusting it.
  */
 const CALIBRATION = {
   'tee-navy': {
-    front: { w: 1007, h: 1012, pxPerCm: 11.353, hspY: 75, centerX: 489.5 },
-    back:  { w: 1033, h: 1014, pxPerCm: 11.202, hspY: 73, centerX: 516.5 },
+    front: { w: 1007, h: 1012, pxPerCm: 12.822, hspY: 38, centerX: 490.0 },
+    back:  { w: 1033, h: 1014, pxPerCm: 12.822, hspY: 38, centerX: 516.0 },
   },
   'tee-burgundy': {
-    front: { w: 1031, h: 1011, pxPerCm: 11.353, hspY: 37, centerX: 496.0 },
-    back:  { w: 1032, h: 1011, pxPerCm: 11.042, hspY: 71, centerX: 515.5 },
+    front: { w: 1031, h: 1011, pxPerCm: 12.795, hspY: 37, centerX: 514.0 },
+    back:  { w: 1032, h: 1011, pxPerCm: 12.781, hspY: 38, centerX: 516.0 },
   },
+  // Cross-checked: widest body row measures 55cm, matching the POM
+  // armhole-to-armhole opening.
   'tank': {
-    front: { w: 768, h: 1145, pxPerCm: 12.564, hspY: 58, centerX: 383.5 },
-    back:  { w: 768, h: 1145, pxPerCm: 12.564, hspY: 57, centerX: 383.5 },
+    front: { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, centerX: 384.0 },
+    back:  { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, centerX: 384.0 },
   },
   'longsleeve': {
-    front: { w: 1060, h: 1149, pxPerCm: 15.95, hspY: 100, centerX: 548.0 },
-    back:  { w: 923, h: 997, pxPerCm: 13.714, hspY: 38, centerX: 442.0 },
+    front: { w: 1060, h: 1149, pxPerCm: 14.151, hspY: 38, centerX: 530.0 },
+    back:  { w: 923, h: 997, pxPerCm: 12.137, hspY: 38, centerX: 461.0 },
   },
-  // RECALIBRATED 2026-07-21 (was 14.65/162 and 14.553/38, both wrong).
-  // Anchored on the hem band; not cross-checked against a second reference the
-  // way the hoodie is, so treat as good but unverified.
+  // Hem-band anchor, no second reference to cross-check against.
   'jacket': {
     front: { w: 1015, h: 1203, pxPerCm: 8.583, hspY: 468, centerX: 506.0 },
     back:  { w: 1016, h: 1249, pxPerCm: 8.600, hspY: 513, centerX: 508.0 },
   },
-  // RECALIBRATED 2026-07-21 (was 12.902/148 and 12.754/191, both wrong).
   // Cross-checked against three independent POM references: hem band 9.42,
   // body length 9.76, sleeve opening at seam 10.07 px/cm.
   'hoodie': {
@@ -72,8 +83,8 @@ const CALIBRATION = {
     back:  { w: 941, h: 1038, pxPerCm: 9.479, hspY: 262, centerX: 471.0 },
   },
   'crewneck': {
-    front: { w: 975, h: 1011, pxPerCm: 13.61, hspY: 98, centerX: 487.0 },
-    back:  { w: 975, h: 1010, pxPerCm: 13.593, hspY: 97, centerX: 487.0 },
+    front: { w: 975, h: 1011, pxPerCm: 12.923, hspY: 38, centerX: 487.0 },
+    back:  { w: 975, h: 1010, pxPerCm: 12.923, hspY: 38, centerX: 487.0 },
   },
 };
 

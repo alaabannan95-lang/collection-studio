@@ -43,18 +43,32 @@ from PIL import Image
 REPO = Path(__file__).resolve().parent.parent.parent
 FLAT_DIR = REPO / "assets"
 
-# Size M point-of-measure values, from each garment's block in data.js.
-#   bottom_opening_cm  "1/2 bottom opening, relaxed"  (data.js sizes.M.hemWidth)
-#   front_length_cm    "Front length, HSP to seam"    (data.js sizes.M.length)
-# Garments with a plain hem carry no bottom-opening figure and so cannot be
-# calibrated by this anchor yet.
+# Point-of-measure values from each garment's block in data.js, with the anchor
+# each one's drawing actually supports.
+#
+#   anchor "hem_band"  Scale from the ribbed hem band's width, then derive HSP
+#                      from the front length. For the hooded garments, whose
+#                      sleeves hang against the body: the hem band is the only
+#                      body feature that separates cleanly from them, and HSP
+#                      cannot be found by inspection because the hood is above
+#                      it.
+#   anchor "length"    Scale from the drawing's own height, and take HSP as the
+#                      topmost inked row. Only valid with no hood, where
+#                      nothing is drawn above the shoulder. This is what the
+#                      unhooded garments use, none of which has a bottom
+#                      opening measurement to anchor on horizontally.
+#
+# Sizes differ by garment because the flats do: the crewneck's tech pack only
+# carries size S, everything else is M.
 GARMENT_POM = {
-    "hoodie": {"bottom_opening_cm": 48.0, "front_length_cm": 66.0},
-    "jacket": {"bottom_opening_cm": 60.0, "front_length_cm": 66.0},
+    "hoodie": {"anchor": "hem_band", "bottom_opening_cm": 48.0, "front_length_cm": 66.0, "size": "M"},
+    "jacket": {"anchor": "hem_band", "bottom_opening_cm": 60.0, "front_length_cm": 66.0, "size": "M"},
+    "tee-navy": {"anchor": "length", "full_length_cm": 73.0, "size": "M"},
+    "tee-burgundy": {"anchor": "length", "full_length_cm": 73.0, "size": "M"},
+    "tank": {"anchor": "length", "full_length_cm": 73.5, "size": "M"},
+    "longsleeve": {"anchor": "length", "full_length_cm": 73.0, "size": "M"},
+    "crewneck": {"anchor": "length", "full_length_cm": 65.0, "size": "S"},
 }
-
-# Garments recognised but not yet calibratable, listed so the error can say so.
-UNCALIBRATED = ("tee-navy", "tee-burgundy", "tank", "longsleeve", "crewneck")
 
 
 class MissingPOM(Exception):
@@ -136,23 +150,86 @@ def _hem_band(alpha: np.ndarray):
     return bottom, right - left + 1, (left + right) / 2
 
 
-def calibrate_flat(garment: str, view: str) -> FlatCalibration:
-    if garment not in GARMENT_POM:
-        extra = " Record its pit points by hand first." if garment in UNCALIBRATED else ""
-        raise MissingPOM(
-            f"no bottom-opening measurement for '{garment}'; cannot calibrate.{extra}"
-        )
-
-    pom = GARMENT_POM[garment]
-    alpha = load_flat_alpha(garment, view)
+def _calibrate_by_hem_band(alpha: np.ndarray, pom: dict) -> FlatCalibration:
     hem_bottom, hem_width_px, hem_centre = _hem_band(alpha)
-
     px_per_cm = hem_width_px / pom["bottom_opening_cm"]
-    hsp_y = int(round(hem_bottom - pom["front_length_cm"] * px_per_cm))
-
     return FlatCalibration(
         px_per_cm=px_per_cm,
-        hsp_y=hsp_y,
+        hsp_y=int(round(hem_bottom - pom["front_length_cm"] * px_per_cm)),
         center_x=int(round(hem_centre)),
         hem_y=hem_bottom,
     )
+
+
+# A row counts as the hem once its widest run reaches this fraction of the
+# drawing's widest run. Cuffs and sleeve tips fall far below it.
+_HEM_WIDTH_FRACTION = 0.4
+
+
+def _widest_run(row: np.ndarray):
+    cols = np.flatnonzero(row)
+    if cols.size == 0:
+        return None
+    runs = np.split(cols, np.flatnonzero(np.diff(cols) > 1) + 1)
+    widest = max(runs, key=len)
+    return int(widest[0]), int(widest[-1])
+
+
+def _calibrate_by_length(alpha: np.ndarray, pom: dict) -> FlatCalibration:
+    """
+    Scale from the body's height, valid only without a hood.
+
+    With nothing drawn above the shoulder, the topmost inked row is HSP, so the
+    top of the garment's own length measurement is directly readable.
+
+    The bottom is the body's hem, which is NOT simply the drawing's lowest ink:
+    on the longsleeve front the cuffs hang below the hem, and measuring to those
+    stretched the scale by 20% against the same garment's back view and put the
+    centreline out on a sleeve. So the hem is found by scanning up for the first
+    row wide enough to be the body.
+    """
+    rows = np.flatnonzero(alpha.any(axis=1))
+    top = int(rows.min())
+
+    widest_overall = max(
+        run[1] - run[0]
+        for run in (_widest_run(alpha[r]) for r in rows)
+        if run is not None
+    )
+
+    body_rows = []
+    for row in range(int(rows.max()), top, -1):
+        run = _widest_run(alpha[row])
+        if run is not None and (run[1] - run[0]) >= _HEM_WIDTH_FRACTION * widest_overall:
+            body_rows.append((row, run))
+
+    if not body_rows:
+        raise MissingPOM("no hem row wide enough to be the body was found")
+
+    # The hem's lowest row sets the length, but not the centreline: the very
+    # last row of a drawing is unevenly antialiased and on the tees it splits
+    # the hem in two, whose wider half sits 8% off centre. So the centreline
+    # comes from the widest body row instead, where the hem is whole.
+    hem_y = max(row for row, _ in body_rows)
+    _, widest = max(body_rows, key=lambda item: item[1][1] - item[1][0])
+
+    return FlatCalibration(
+        px_per_cm=(hem_y - top) / pom["full_length_cm"],
+        hsp_y=top,
+        center_x=int(round((widest[0] + widest[1]) / 2)),
+        hem_y=hem_y,
+    )
+
+
+_ANCHORS = {"hem_band": _calibrate_by_hem_band, "length": _calibrate_by_length}
+
+
+def calibrate_flat(garment: str, view: str) -> FlatCalibration:
+    pom = GARMENT_POM.get(garment)
+    if pom is None:
+        raise MissingPOM(
+            f"no point-of-measure data for '{garment}'; cannot calibrate. "
+            f"Known garments: {', '.join(sorted(GARMENT_POM))}"
+        )
+
+    return _ANCHORS[pom["anchor"]](load_flat_alpha(garment, view), pom)
