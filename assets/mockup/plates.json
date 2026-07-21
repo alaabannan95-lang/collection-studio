@@ -1,0 +1,14 @@
+{
+  "hoodie": {
+    "bottom_opening_cm": 48.0,
+    "panel": {
+      "top_cm": 8.0,
+      "bottom_cm": 45.0,
+      "half_width_cm": 22.0
+    },
+    "white": {
+      "front": { "file": "base/hoodie_white_front.png" },
+      "back": { "file": "base/hoodie_white_back.png" }
+    }
+  }
+}
