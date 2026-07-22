@@ -65,11 +65,17 @@ def test_composite_keeps_plate_resolution(flat_template):
     assert out.mode == "RGBA"
 
 
-def test_artwork_is_clipped_to_the_printable_panel(flat_template):
-    """A print pushed past the panel's bottom edge must be cut, not overflow."""
-    out = compose(flat_template, _artwork(), Placement(width_cm=30.0, drop_cm=54.0))
+def test_artwork_is_clipped_to_the_garment(flat_template):
+    """
+    A print pushed past the garment's hem must be cut at the cloth.
+
+    This replaces an earlier test that clipped to the printable panel instead.
+    That behaviour was wrong: it silently erased any artwork placed outside the
+    panel, which is how the logo disappeared from generated mockups.
+    """
+    out = compose(flat_template, _artwork(), Placement(width_cm=30.0, drop_cm=62.0))
     painted = np.asarray(out.convert("RGB"), dtype=np.float32)
-    assert painted[660:, :, 0].min() > 240  # still white below the panel
+    assert painted[710:, :, 0].min() > 240  # still white below the hem at row 700
 
 
 def test_print_lands_where_placement_says(flat_template):
@@ -186,3 +192,36 @@ def test_recolour_leaves_the_background_alone():
     tinted = np.asarray(recolour(plate, alpha, "#B00020"), dtype=np.float32)
     assert tinted[2, 2].min() > 250      # background untouched
     assert tinted[30, 30, 0] > tinted[30, 30, 1] + 60  # garment tinted
+
+
+def test_a_print_outside_the_suggested_panel_still_renders(flat_template):
+    """
+    The panel is a guide, not a gate. A print placed above or below it must
+    still appear: silently deleting a designer's artwork because it sits
+    outside a suggested box is worse than showing it where they put it.
+
+    This is the bug that made the logo vanish from generated mockups. The panel
+    on the hoodie back starts 11cm below the collar, so a logo placed higher
+    was clipped to nothing and the mockup came back blank.
+    """
+    # A wide, short print sitting ENTIRELY above the fixture's panel, which
+    # starts at row 150. At 0.5cm below a collar at row 100 it spans rows 105
+    # to 135, so no part of it overlaps the panel and the old code erased all
+    # of it.
+    art = _artwork(w=400, h=100, colour=(20, 20, 20, 255))
+    out = compose(flat_template, art, Placement(width_cm=12.0, drop_cm=0.5), method="screen")
+    dark = np.asarray(out.convert("L"), dtype=np.float32) < 128
+    assert dark.any(), "print placed above the panel did not render at all"
+
+
+def test_a_print_never_spills_onto_the_background(flat_template):
+    """
+    The garment itself is still the boundary: ink may go anywhere on the cloth
+    but never onto the backdrop, or the cutout would carry paint floating in
+    space.
+    """
+    art = _artwork(w=400, h=400, colour=(20, 20, 20, 255))
+    out = compose(flat_template, art, Placement(width_cm=60.0, drop_cm=1.0), method="screen")
+    rgb = np.asarray(out.convert("RGB"), dtype=np.float32)
+    off_garment = flat_template.alpha < 0.5
+    assert rgb[off_garment].min() > 250

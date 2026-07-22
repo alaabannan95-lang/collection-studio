@@ -96,7 +96,18 @@ def place(template, artwork, placement):
 
 
 def _rasterise(template, artwork, placement):
-    """The artwork's ink and alpha at plate resolution, clipped to the panel."""
+    """
+    The artwork's ink and alpha at plate resolution, clipped to the garment.
+
+    Clipped to the GARMENT, not to the printable panel. The panel is a guide
+    for where a print usually belongs, and clipping to it silently erased any
+    artwork placed outside: a logo set higher than the panel's top came back as
+    a blank mockup with no warning. A design tool must not delete the
+    designer's work because it sits outside a suggested box.
+
+    The garment's own alpha is still the boundary, so ink can go anywhere on
+    the cloth but never onto the backdrop.
+    """
     left, top, right, bottom = place(template, artwork, placement)
     layer = Image.new("RGBA", template.plate.size, (0, 0, 0, 0))
     scaled = artwork.convert("RGBA").resize((right - left, bottom - top), Image.LANCZOS)
@@ -104,7 +115,7 @@ def _rasterise(template, artwork, placement):
 
     rgba = np.asarray(layer, dtype=np.float32)
     ink = rgba[:, :, :3]
-    alpha = (rgba[:, :, 3] / 255.0) * template.panel
+    alpha = (rgba[:, :, 3] / 255.0) * np.clip(template.alpha, 0.0, 1.0)
     return ink, alpha
 
 
@@ -179,6 +190,11 @@ def compose(template, artwork, placement, method="screen"):
     ink, alpha = _rasterise(template, artwork, placement)
     ink, alpha = _displace(ink, alpha, template.depth)
     ink, alpha, shadow = _METHODS[method](ink, alpha, template)
+
+    # Re-clip to the garment. The material passes soften and dilate the ink,
+    # which pushes it a pixel or two past the cloth's edge, and paint floating
+    # off the garment would survive into the transparent cutout.
+    alpha = alpha * np.clip(template.alpha, 0.0, 1.0)
 
     # The print sits in the plate's own light.
     ink = np.clip(ink * template.shade[:, :, None], 0, 255)
