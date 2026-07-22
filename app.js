@@ -1183,10 +1183,33 @@ async function generateMockup() {
     status.textContent = 'Mockup opened in a new tab. Right-click it to save.';
   } catch (err) {
     status.style.color = 'var(--danger, #c0392b)';
-    status.textContent = `Mockup failed: ${err.message}`;
+    status.textContent = `Mockup failed: ${explainMockupFailure(err)}`;
   } finally {
     btn.disabled = false;
   }
+}
+
+// "Load failed" and "404" tell you nothing about what to actually do. The two
+// ways this realistically breaks both have a specific fix, so name it.
+function explainMockupFailure(err) {
+  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+  if (!local) {
+    return location.protocol === 'file:'
+      ? 'the app is open straight from Finder, so it is calling the deployed '
+        + 'backend, which has no mockup support yet. Serve it locally instead: '
+        + 'in Terminal, cd into "Collection studio" and run '
+        + 'python3 -m http.server 3901, then open http://localhost:3901'
+      : `the deployed backend at ${TECHPACK_SERVER} has no mockup support yet. `
+        + 'It needs redeploying with the current backend code.';
+  }
+
+  if (/404/.test(err.message)) {
+    return 'the local backend is running an older build without the mockup '
+      + 'endpoint. Restart it: cd "Collection studio/backend" && python3 app.py';
+  }
+  return `${err.message}. Is the local backend running? `
+    + 'cd "Collection studio/backend" && python3 app.py';
 }
 
 async function downloadTechpack() {
