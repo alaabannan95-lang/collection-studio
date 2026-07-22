@@ -4,17 +4,17 @@
     "white": {
       "front": {
         "file": "base/hoodie_white_front.png",
-        "_hsp_note": "Shoulder line, read off the plate: the silhouette jumps from 733px to 980px wide between y=322 and y=422 as the sleeves begin.",
-        "hsp_y": 400,
-        "panel": { "top_cm": 8.0, "bottom_cm": 34.0, "half_width_cm": 22.0 },
-        "_panel_note": "Stops at 34cm so it clears the kangaroo pocket, whose top edge sits about 39cm below HSP."
+        "_hsp_note": "Collar reference, aligned to the flat so both surfaces agree on where a placement lands. The neckline V sits at y=418 on this plate and the flat puts HSP 3.38cm below its own V, so 418 + 3.38cm = 481. An earlier value of 400 came from 'the row where the silhouette widens into the sleeves', which is not the point the flats use, and put prints 4.3cm too high.",
+        "hsp_y": 481,
+        "panel": { "top_cm": 6.0, "bottom_cm": 32.0, "half_width_cm": 22.0 },
+        "_panel_note": "Guide only, not a clip. Stops above the kangaroo pocket."
       },
       "back": {
         "file": "base/hoodie_white_back.png",
-        "_hsp_note": "Shoulder line, read off the plate: the silhouette jumps from 674px to 890px wide between y=370 and y=470.",
-        "hsp_y": 420,
-        "panel": { "top_cm": 11.0, "bottom_cm": 52.0, "half_width_cm": 26.0 },
-        "_panel_note": "Starts at 11cm to clear the folded hood (reaches ~y=590) and runs to 52cm, filling the open back panel the way the reference graphics do."
+        "_hsp_note": "Same rule as the front. The hood's lower edge sits at y=608 and the flat puts HSP 3.59cm below its own, so 608 + 3.59cm = 673. An earlier value of 420 sat inside the hood and put prints 13.9cm too high, pinning them against it.",
+        "hsp_y": 673,
+        "panel": { "top_cm": 4.0, "bottom_cm": 45.0, "half_width_cm": 26.0 },
+        "_panel_note": "Guide only, not a clip. Fills the open back panel."
       }
     }
   }
