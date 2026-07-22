@@ -332,6 +332,7 @@ function bindGlobalControls() {
 
   document.getElementById('downloadBtn').addEventListener('click', downloadPng);
   document.getElementById('downloadTechpackBtn').addEventListener('click', downloadTechpack);
+  document.getElementById('mockupBtn').addEventListener('click', generateMockup);
   initTechpackFolderButton();
 
   document.getElementById('saveDesignBtn').addEventListener('click', saveCurrentDesign);
@@ -1140,6 +1141,52 @@ function initTechpackFolderButton() {
       }
     }
   });
+}
+
+// Renders the current design as a photoreal mockup, opening it in a new tab so
+// it can be inspected at full size before saving. Deliberately reuses the tech
+// pack's payload: every print already carries its size and position in
+// centimetres, so the mockup can never disagree with what the factory is sent.
+async function generateMockup() {
+  const status = document.getElementById('techpackStatus');
+  const btn = document.getElementById('mockupBtn');
+  const g = currentGarment();
+
+  const onThisSide = state.prints.filter(p => p.view === state.view);
+  if (!onThisSide.length) {
+    status.style.color = '';
+    status.textContent = `No artwork on the ${state.view} yet. Add a print first.`;
+    return;
+  }
+
+  btn.disabled = true;
+  status.style.color = '';
+  status.textContent = 'Rendering mockup… first one can take ~40s if the server is cold.';
+  try {
+    const res = await fetch(`${TECHPACK_SERVER}/generate-mockup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        garment: g,
+        color: state.color,
+        view: state.view,
+        prints: state.prints.map(p => serializePrintForExport(g, p)),
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server error (${res.status})`);
+    }
+
+    const url = URL.createObjectURL(await res.blob());
+    window.open(url, '_blank');
+    status.textContent = 'Mockup opened in a new tab. Right-click it to save.';
+  } catch (err) {
+    status.style.color = 'var(--danger, #c0392b)';
+    status.textContent = `Mockup failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function downloadTechpack() {

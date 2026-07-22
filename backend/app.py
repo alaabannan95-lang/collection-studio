@@ -38,6 +38,9 @@ sys.path.insert(0, str(HERE))
 from flask import Flask, request, Response, jsonify
 from techpack_render import build_custom_techpack
 
+sys.path.insert(0, str(REPO))
+from backend.mockup.service import render_payload  # noqa: E402
+
 app = Flask(__name__)
 
 
@@ -74,6 +77,34 @@ def generate_techpack():
                 pass  # non-fatal: the download still succeeds
 
         return Response(pdf_bytes, mimetype='application/pdf', headers=headers)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/generate-mockup', methods=['POST', 'OPTIONS'])
+def generate_mockup():
+    """
+    Same design payload as the tech pack, rendered as a photoreal mockup.
+
+    Reusing the payload is deliberate: every print already carries its size and
+    position in centimetres, so the mockup needs no extra UI state and can
+    never drift from what the tech pack says.
+    """
+    if request.method == 'OPTIONS':
+        return Response(status=204)
+    try:
+        payload = request.get_json(force=True)
+        view = (payload.get('view') or '').strip() or None
+        png_bytes = render_payload(payload, view=view)
+
+        stamp = datetime.now().strftime('%Y-%m-%d-%H%M')
+        filename = f"{payload['garment']['id']}-mockup-{view or 'front'}-{stamp}.png"
+        return Response(
+            png_bytes,
+            mimetype='image/png',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500

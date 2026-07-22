@@ -48,6 +48,41 @@ class Placement:
     offset_cm: float = 0.0
 
 
+def recolour(plate, alpha, hex_colour):
+    """
+    Tint the garment to a colourway while keeping every fold and shadow.
+
+    The plates are white, so without this a red hoodie renders white and the
+    mockup ignores the colourway entirely.
+
+    Works the way the flats do, in spirit: take the plate's own brightness as a
+    multiplier around its mid-tone and apply the target colour through it.
+    Where the fabric is in shadow the multiplier is below 1 and the colour goes
+    darker; on a highlight it rises above 1 and the colour lifts toward white.
+    That keeps the photograph's lighting instead of flooding it with flat paint.
+    """
+    if not hex_colour:
+        return plate
+
+    hex_colour = hex_colour.lstrip("#")
+    target = np.array(
+        [int(hex_colour[i:i + 2], 16) for i in (0, 2, 4)], dtype=np.float32
+    )
+
+    rgb = np.asarray(plate.convert("RGB"), dtype=np.float32)
+    luma = rgb.mean(axis=2)
+
+    garment = alpha > 0.5
+    mid = float(np.median(luma[garment])) if garment.any() else 255.0
+    ratio = (luma / max(mid, 1.0))[:, :, None]
+
+    tinted = np.clip(target[None, None, :] * ratio, 0, 255)
+    a = np.clip(alpha, 0.0, 1.0)[:, :, None]
+    return Image.fromarray(
+        np.clip(rgb * (1.0 - a) + tinted * a, 0, 255).astype(np.uint8)
+    )
+
+
 def place(template, artwork, placement):
     """Return the artwork's (left, top, right, bottom) box in plate pixels."""
     calib = template.calib

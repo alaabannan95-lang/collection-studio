@@ -153,3 +153,36 @@ def test_transparent_artwork_only_prints_its_opaque_pixels(flat_template):
     dark = np.asarray(out.convert("L"), dtype=np.float32) < 128
     # Far less than half the print box is inked.
     assert dark.mean() < 0.1
+
+
+def test_recolour_tints_the_garment_but_keeps_its_folds():
+    """
+    A red hoodie must render red. The plate is white, so the body colour has to
+    be applied to it; without this the mockup ignores the colourway entirely
+    and every garment comes back white.
+    """
+    from backend.mockup.compose import recolour
+
+    plate = Image.new("RGB", (64, 64), (240, 240, 240))
+    plate.putpixel((10, 10), (180, 180, 180))  # a fold, darker than its surroundings
+    alpha = np.ones((64, 64), dtype=np.float32)
+
+    tinted = np.asarray(recolour(plate, alpha, "#B00020"), dtype=np.float32)
+
+    # Reads red, not white.
+    assert tinted[32, 32, 0] > tinted[32, 32, 1] + 60
+    assert tinted[32, 32, 0] > tinted[32, 32, 2] + 60
+    # The fold survives as a darker patch.
+    assert tinted[10, 10].mean() < tinted[32, 32].mean() - 10
+
+
+def test_recolour_leaves_the_background_alone():
+    from backend.mockup.compose import recolour
+
+    plate = Image.new("RGB", (64, 64), (255, 255, 255))
+    alpha = np.zeros((64, 64), dtype=np.float32)
+    alpha[20:40, 20:40] = 1.0
+
+    tinted = np.asarray(recolour(plate, alpha, "#B00020"), dtype=np.float32)
+    assert tinted[2, 2].min() > 250      # background untouched
+    assert tinted[30, 30, 0] > tinted[30, 30, 1] + 60  # garment tinted
