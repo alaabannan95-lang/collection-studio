@@ -10,6 +10,48 @@
 </head>
 <body>
 
+<!-- ============================================================
+     Access gate. Simple client-side passcode.
+     NOTE: this is a light deterrent only, not real security.
+     The passcode lives in this file, which is public on GitHub.
+     ============================================================ -->
+<div id="accessGate" style="position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center; background:#1a1a1d;">
+  <div style="width:min(340px,86vw); background:var(--chrome-1,#212124); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:34px 30px; text-align:center; box-shadow:0 24px 60px rgba(0,0,0,.5);">
+    <img src="assets/logo.png" alt="Story Of A Pilgrim" style="height:34px; width:auto; margin-bottom:20px;">
+    <div style="color:#f3f1ec; font-family:'Roboto Condensed',sans-serif; font-weight:600; font-size:15px; letter-spacing:.02em; margin-bottom:4px;">Collection Studio</div>
+    <div style="color:#aaaab1; font-family:'Roboto Condensed',sans-serif; font-size:13px; margin-bottom:20px;">Enter passcode to continue</div>
+    <input type="password" id="gateInput" inputmode="numeric" autocomplete="off" spellcheck="false"
+           style="width:100%; box-sizing:border-box; text-align:center; letter-spacing:.4em; font-size:18px; padding:11px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.16); background:#2a2a2f; color:#f3f1ec; outline:none;">
+    <div id="gateError" style="height:16px; margin:8px 0 4px; color:#ff6a63; font-family:'Roboto Condensed',sans-serif; font-size:12px;"></div>
+    <button id="gateBtn" style="width:100%; padding:11px 12px; border:none; border-radius:8px; background:#ef5350; color:#17171a; font-family:'Roboto Condensed',sans-serif; font-weight:700; font-size:14px; cursor:pointer;">Unlock</button>
+  </div>
+</div>
+<script>
+(function () {
+  var PASSCODE = "4015";
+  var gate  = document.getElementById("accessGate");
+  var input = document.getElementById("gateInput");
+  var btn   = document.getElementById("gateBtn");
+  var err   = document.getElementById("gateError");
+  if (sessionStorage.getItem("cs_unlocked") === "1") { gate.remove(); return; }
+  document.documentElement.style.overflow = "hidden";
+  function tryUnlock() {
+    if (input.value === PASSCODE) {
+      sessionStorage.setItem("cs_unlocked", "1");
+      document.documentElement.style.overflow = "";
+      gate.remove();
+    } else {
+      err.textContent = "Incorrect passcode.";
+      input.value = "";
+      input.focus();
+    }
+  }
+  btn.addEventListener("click", tryUnlock);
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") tryUnlock(); });
+  input.focus();
+})();
+</script>
+
 <header class="topbar">
   <img src="assets/logo.png" alt="Story Of A Pilgrim">
   <h1>Collection Studio</h1>
@@ -39,6 +81,7 @@
       <button class="tab-btn active" data-tab="color">Color</button>
       <button class="tab-btn" data-tab="print">Print</button>
       <button class="tab-btn" data-tab="measure">Measure</button>
+      <button class="tab-btn" data-tab="fabric">Fabric</button>
       <button class="tab-btn" data-tab="seams">Seams</button>
       <button class="tab-btn" data-tab="save">Save</button>
     </div>
@@ -153,6 +196,17 @@
       <div class="pom-note" id="measureNote"></div>
     </div>
 
+    <div class="tab-panel" id="tab-fabric">
+      <p class="hint">GSM measures density, not quality. These are the fields that decide whether a 500 GSM piece reads premium or cheap, and they are exactly what factories substitute when a tech pack stays silent. Everything here prints on the tech pack's <strong>Fabric &amp; Finishing</strong> page.</p>
+      <div class="color-input-row" style="gap:8px;">
+        <button type="button" class="btn secondary" id="fabricSpecResetBtn" style="margin:0;">Reset to premium spec</button>
+      </div>
+      <div id="fabricSpecFields"></div>
+      <div class="section-title" style="margin-top:20px;">Required with the sample</div>
+      <ul class="layer-list" id="fabricSpecRequirements"></ul>
+      <p class="hint">These print under the spec table. Without them the spec is a claim, not a verified fact.</p>
+    </div>
+
     <div class="tab-panel" id="tab-seams">
       <p class="hint">Pick the seam finish for each construction point. Each one prints on the tech pack's Seam Finish page: a photo reference plus a callout arrow to that part of the flat drawing.</p>
       <div id="seamList"></div>
@@ -181,6 +235,7 @@
 
 </div>
 
+<script src="placement.js"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 </body>

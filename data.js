@@ -12,10 +12,22 @@
  * Real pixel-to-centimetre calibration per garment/view, measured off the
  * flat-drawing PNGs:
  *   pxPerCm  - scale factor, px per real centimetre
- *   hspY     - the shoulder/collar reference row in px ("HSP")
+ *   hspY     - the shoulder reference row in px ("HSP", high shoulder point).
+ *              This is the technical datum the POM front length is measured
+ *              from. It is INVISIBLE on the drawing, which is why necklineY
+ *              exists alongside it.
+ *   necklineY - the collar edge AS DRAWN, i.e. the line a person points at and
+ *              calls "the collar". It is NOT hspY, and the sign of the gap
+ *              flips by garment type: on the hoodie front the hood V sits 4.1cm
+ *              ABOVE HSP, while a tee's collar sits 6.6cm BELOW it. Reporting
+ *              one "below collar" number hid an 11cm swing between garments.
+ *   hemY     - the bottom of the BODY hem in px, the third vertical datum.
+ *              Not the drawing's lowest ink: on the longsleeve front the cuffs
+ *              hang below the hem. (hemY - hspY) / pxPerCm is the garment's
+ *              collar-to-hem length, which tests assert against the POM.
  *   centerX  - horizontal garment centerline in px
- * These drive the widthCm / belowCollarCm figures app.js prints on the tech
- * pack PDF, so the factory cuts and prints to them.
+ * These drive the widthCm / belowCollarCm / aboveHemCm figures app.js prints on
+ * the tech pack PDF, so the factory cuts and prints to them.
  *
  * !! The old values from scripts/calibrate_studio_flats.py were WRONG. !!
  *
@@ -54,37 +66,37 @@
  */
 const CALIBRATION = {
   'tee-navy': {
-    front: { w: 1007, h: 1012, pxPerCm: 12.822, hspY: 38, centerX: 490.0 },
-    back:  { w: 1033, h: 1014, pxPerCm: 12.822, hspY: 38, centerX: 516.0 },
+    front: { w: 1007, h: 1012, pxPerCm: 12.822, hspY: 38, necklineY: 122, hemY: 974, centerX: 490.0 },
+    back: { w: 1033, h: 1014, pxPerCm: 12.822, hspY: 38, necklineY: 91, hemY: 974, centerX: 516.0 },
   },
   'tee-burgundy': {
-    front: { w: 1031, h: 1011, pxPerCm: 12.795, hspY: 37, centerX: 514.0 },
-    back:  { w: 1032, h: 1011, pxPerCm: 12.781, hspY: 38, centerX: 516.0 },
+    front: { w: 1031, h: 1011, pxPerCm: 12.795, hspY: 37, necklineY: 121, hemY: 971, centerX: 514.0 },
+    back: { w: 1032, h: 1011, pxPerCm: 12.781, hspY: 38, necklineY: 89, hemY: 971, centerX: 516.0 },
   },
   // Cross-checked: widest body row measures 55cm, matching the POM
   // armhole-to-armhole opening.
   'tank': {
-    front: { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, centerX: 384.0 },
-    back:  { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, centerX: 384.0 },
+    front: { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, necklineY: 209, hemY: 1106, centerX: 384.0 },
+    back: { w: 768, h: 1145, pxPerCm: 14.531, hspY: 38, necklineY: 96, hemY: 1106, centerX: 384.0 },
   },
   'longsleeve': {
-    front: { w: 1060, h: 1149, pxPerCm: 14.151, hspY: 38, centerX: 530.0 },
-    back:  { w: 923, h: 997, pxPerCm: 12.137, hspY: 38, centerX: 461.0 },
+    front: { w: 1060, h: 1149, pxPerCm: 14.151, hspY: 38, necklineY: 130, hemY: 1071, centerX: 530.0 },
+    back: { w: 923, h: 997, pxPerCm: 12.137, hspY: 38, necklineY: 87, hemY: 924, centerX: 461.0 },
   },
   // Hem-band anchor, no second reference to cross-check against.
   'jacket': {
-    front: { w: 1015, h: 1203, pxPerCm: 8.583, hspY: 468, centerX: 506.0 },
-    back:  { w: 1016, h: 1249, pxPerCm: 8.600, hspY: 513, centerX: 508.0 },
+    front: { w: 1015, h: 1203, pxPerCm: 8.583, hspY: 468, necklineY: 420, hemY: 1035, centerX: 506.0 },
+    back: { w: 1016, h: 1249, pxPerCm: 8.600, hspY: 513, necklineY: 198, hemY: 1081, centerX: 508.0 },
   },
   // Cross-checked against three independent POM references: hem band 9.42,
   // body length 9.76, sleeve opening at seam 10.07 px/cm.
   'hoodie': {
-    front: { w: 941, h: 993, pxPerCm: 9.479, hspY: 217, centerX: 470.0 },
-    back:  { w: 941, h: 1038, pxPerCm: 9.479, hspY: 262, centerX: 471.0 },
+    front: { w: 941, h: 993, pxPerCm: 9.479, hspY: 217, necklineY: 178, hemY: 843, centerX: 470.0 },
+    back: { w: 941, h: 1038, pxPerCm: 9.479, hspY: 262, necklineY: 114, hemY: 888, centerX: 471.0 },
   },
   'crewneck': {
-    front: { w: 975, h: 1011, pxPerCm: 12.923, hspY: 38, centerX: 487.0 },
-    back:  { w: 975, h: 1010, pxPerCm: 12.923, hspY: 38, centerX: 487.0 },
+    front: { w: 975, h: 1011, pxPerCm: 12.923, hspY: 38, necklineY: 70, hemY: 878, centerX: 487.0 },
+    back: { w: 975, h: 1010, pxPerCm: 12.923, hspY: 38, necklineY: 43, hemY: 878, centerX: 487.0 },
   },
 };
 
@@ -166,6 +178,209 @@ const WASHES = [
   'Mineral wash',
   'Stone wash',
   'Acid wash',
+];
+
+// ---------------------------------------------------------------------------
+// FABRIC & FINISHING SPEC
+//
+// Source: context/fabric_quality_guide.md (written 2026-07-28 after a 500 GSM
+// sample came back correct on weight and measurements and still read cheap).
+//
+// The rule: GSM measures density, NOT quality. These are the fields that
+// actually decide whether a 500 GSM hoodie looks like 30 EUR or 300 EUR, and
+// they are exactly the fields factories substitute quietly when a tech pack
+// stays silent on them. Every field below prints on the tech pack's
+// Fabric & Finishing page.
+//
+// `preferred` marks the premium answer. Anything else is flagged on the PDF so
+// a downgrade cannot pass unnoticed. `note` explains why it matters, and shows
+// as the hint under the field in the studio.
+// ---------------------------------------------------------------------------
+const FABRIC_SPEC_GROUPS = [
+  {
+    group: 'Yarn',
+    fields: [
+      {
+        key: 'yarnSpinning',
+        label: 'Yarn spinning',
+        options: ['Ring-spun, compact spun', 'Ring-spun', 'Open-end / rotor-spun', 'Not specified'],
+        preferred: 'Ring-spun, compact spun',
+        note: 'Open-end is 15-25% weaker and coarser. Its loose fibre ends are what create surface fuzz and pilling.',
+      },
+      {
+        key: 'stapleLength',
+        label: 'Staple length',
+        options: ['Long staple, combed', 'Long staple, carded', 'Short staple, combed', 'Short staple, carded', 'Not specified'],
+        preferred: 'Long staple, combed',
+        note: 'Combing removes the short fibres (15-20% of the batch). Every short fibre has two ends, and every end eventually becomes a pill.',
+      },
+      {
+        key: 'yarnCount',
+        label: 'Yarn count (face)',
+        type: 'text',
+        placeholder: 'e.g. 20/1',
+        preferred: '20/1',
+        note: 'Benchmark: 20/1 (Rovo Assembly publish this on their 500 GSM hoodie). 16/1 for a heavier hand.',
+      },
+      {
+        key: 'layInYarn',
+        label: 'Lay-in / backing yarn',
+        options: ['Ring-spun cotton', 'Open-end cotton', 'Polyester', 'Cotton / poly blend', 'Not specified'],
+        preferred: 'Ring-spun cotton',
+        note: 'THE detail nobody specifies. It is the layer that touches skin and the layer that pills. Cheap mills substitute open-end or poly here because "nobody sees it".',
+      },
+    ],
+  },
+  {
+    group: 'Knit construction',
+    fields: [
+      {
+        key: 'knitConstruction',
+        label: 'Construction',
+        options: [
+          '3-end (3-thread) brushed-back fleece',
+          '2-end (2-thread) fleece',
+          'Loopback French terry (unbrushed)',
+          'Single jersey',
+          'Not specified',
+        ],
+        preferred: '3-end (3-thread) brushed-back fleece',
+        note: 'The third yarn is a tie yarn locking the front and back layers together. Without it a 500 GSM fleece is just heavy fabric that droops.',
+      },
+      {
+        key: 'knitFace',
+        label: 'Knit face',
+        options: ['Plain / flat jersey face', 'Diagonal', 'Not specified'],
+        preferred: 'Plain / flat jersey face',
+        note: 'Diagonal comes off a cheaper machine setup and shows a visible twill-like slant.',
+      },
+      {
+        key: 'brushing',
+        label: 'Brushing',
+        options: [
+          'Single light pass, inside face only',
+          'Two-pass brushing',
+          'Heavy multi-pass brushing',
+          'None (unbrushed)',
+        ],
+        preferred: 'Single light pass, inside face only',
+        note: 'Over-brushing shreds fibres. That is what makes fleece shed, pill, and collapse on camera. More brushing is not more premium.',
+      },
+      {
+        key: 'fabricFinishing',
+        label: 'Fabric finishing',
+        options: ['Open-width', 'Tubular', 'Not specified'],
+        preferred: 'Open-width',
+        note: 'Open-width prevents the garment twisting at the side seam after washing. Tubular is cheaper and twists.',
+      },
+      {
+        key: 'shrinkage',
+        label: 'Shrinkage',
+        type: 'text',
+        placeholder: 'e.g. Pre-shrunk, max 3% after 3 washes',
+        preferred: 'Pre-shrunk, max 3% after 3 washes',
+        note: 'Sanforized / pre-shrunk. Garment dyeing already shrinks the piece in the vat.',
+      },
+    ],
+  },
+  {
+    group: 'Wet processing & finishing',
+    fields: [
+      {
+        key: 'enzymeWash',
+        label: 'Enzyme wash / bio-polish',
+        options: ['Enzyme wash / bio-polish (required)', 'None'],
+        preferred: 'Enzyme wash / bio-polish (required)',
+        note: 'Cellulase enzymes eat the loose surface fibres off. Removes fuzz, kills future pilling, softens the hand.',
+      },
+      {
+        key: 'dyeMethod',
+        label: 'Dye method',
+        options: ['Garment dyed', 'Piece dyed', 'Pigment dyed', 'Yarn dyed', 'Not specified'],
+        preferred: 'Garment dyed',
+        note: 'Sew raw, then dye the finished piece. Softer hand, deeper tone, subtle variation across seams, no first-wash shrinkage.',
+      },
+      {
+        key: 'softener',
+        label: 'Softener',
+        options: ['Silicone softener', 'None'],
+        preferred: 'Silicone softener',
+        note: 'The final chemical pass that produces the "expensive" hand feel.',
+      },
+    ],
+  },
+  {
+    group: 'Trims',
+    fields: [
+      {
+        key: 'ribConstruction',
+        label: 'Rib construction',
+        options: ['2x1 rib', '1x1 rib', 'Not specified'],
+        preferred: '2x1 rib',
+        note: 'Deeper, denser, more sculpted than 1x1.',
+      },
+      {
+        key: 'ribComposition',
+        label: 'Rib composition',
+        options: ['95% cotton / 5% elastane', '97% cotton / 3% elastane', '100% cotton (no elastane)', 'Not specified'],
+        preferred: '95% cotton / 5% elastane',
+        note: 'Without elastane the cuffs hang open by week six, and once cuffs and hem go the whole silhouette collapses.',
+      },
+      {
+        key: 'neckTape',
+        label: 'Neck tape',
+        options: ['Self-fabric, shoulder to shoulder', 'Poly tape', 'None'],
+        preferred: 'Self-fabric, shoulder to shoulder',
+        note: 'The first thing anyone does when they pick up a hoodie is look inside the collar.',
+      },
+    ],
+  },
+  {
+    group: 'Construction',
+    fields: [
+      {
+        key: 'spi',
+        label: 'Stitch density (SPI)',
+        type: 'text',
+        placeholder: 'e.g. 10-12',
+        preferred: '10-12',
+        note: 'Below 8 causes seam slippage. Above 14 the needle cuts the fabric.',
+      },
+      {
+        key: 'hemStitch',
+        label: 'Hem & cuff stitch',
+        options: ['Chainstitch (ISO 401)', 'Coverstitch', 'Lockstitch', 'Not specified'],
+        preferred: 'Chainstitch (ISO 401)',
+        note: 'Roughly twice the thread per inch, and it stretches with the fabric instead of popping.',
+      },
+      {
+        key: 'thread',
+        label: 'Thread',
+        options: ['Core-spun polyester, colour matched', 'Spun polyester', 'Not specified'],
+        preferred: 'Core-spun polyester, colour matched',
+        note: 'Core-spun holds seam strength on heavyweight knits.',
+      },
+    ],
+  },
+];
+
+// Flat lookup, used by the studio and the export payload.
+const FABRIC_SPEC_FIELDS = FABRIC_SPEC_GROUPS.flatMap(g => g.fields);
+
+// Defaults = the premium answer for every field. The studio opens on the
+// correct spec, and any downgrade is a deliberate act rather than an omission.
+const FABRIC_SPEC_DEFAULT = Object.fromEntries(
+  FABRIC_SPEC_FIELDS.map(f => [f.key, f.preferred])
+);
+
+// Documents the factory has to return WITH the sample. Without these the spec
+// above is a claim, not a verified fact. Prints under the spec table.
+const FABRIC_SPEC_REQUIREMENTS = [
+  'Fabric swatch, unwashed AND washed',
+  'Yarn spec sheet: spinning type, staple length and count for face, tie and lay-in yarns',
+  'Lab dips for the body colourway, minimum 3 options against the Pantone TCX reference',
+  'Pilling test result (Martindale or ICI), minimum rating 3-4',
+  'Shrinkage test result after 3 domestic washes',
 ];
 
 const GARMENTS = [

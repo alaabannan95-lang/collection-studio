@@ -34,7 +34,7 @@ cannot use this anchor. They raise rather than fall back to a guess, and need
 their pit points recorded by hand before they can be calibrated.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -84,6 +84,9 @@ class FlatCalibration:
     # built on. Note this is not the drawing's lowest ink: the cuffs hang below
     # it, and measuring to those instead overstates the body by the cuff drop.
     hem_y: int
+    # The collar edge AS DRAWN, which is NOT hsp_y. On a hood it sits above the
+    # shoulders; on a ribbed collar, below them. See find_neckline_y.
+    neck_y: int = 0
 
 
 def load_flat_alpha(garment: str, view: str) -> np.ndarray:
@@ -91,6 +94,67 @@ def load_flat_alpha(garment: str, view: str) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"missing flat drawing: {path}")
     return np.asarray(Image.open(path).convert("RGBA"))[:, :, 3] > 10
+
+
+def load_flat_linework(garment: str, view: str) -> np.ndarray:
+    """The drawn lines inside the silhouette, not just its outline.
+
+    The alpha mask alone cannot find the collar: the neckline is an interior
+    seam line, not an edge of the shape. Anything inked and dark counts.
+    """
+    path = FLAT_DIR / f"{garment}_{view}.png"
+    if not path.exists():
+        raise FileNotFoundError(f"missing flat drawing: {path}")
+    arr = np.asarray(Image.open(path).convert("RGBA")).astype(int)
+    return (arr[:, :, 3] > 40) & (arr[:, :, :3].sum(axis=2) < 330)
+
+
+def find_neckline_y(garment: str, view: str, center_x: int, hsp_y: int,
+                    px_per_cm: float) -> int:
+    """Row of the collar edge AS DRAWN, which is not the same as HSP.
+
+    Why this exists: HSP is the technical datum (it is the end of the POM front
+    length) but it is invisible on the drawing. The eye reads "the collar" as
+    whatever line is drawn at the neck, and on a HOODED garment that is the
+    hood, which sits ABOVE HSP. On the hoodie front the hood V is 4.1cm above
+    HSP while a tee's collar sits 6.6cm below it -- an ~11cm swing between
+    garment types that a single "below collar" label silently hid.
+
+    Method: walk a narrow band down the centre line, group the inked runs, and
+    take the LOWEST group still inside the neck region. For a hood that is the
+    V where it meets the body; for a ribbed collar it is the bottom of the rib.
+    Both are exactly the line a person points at and calls the collar.
+    """
+    dark = load_flat_linework(garment, view)
+    height = dark.shape[0]
+    lo = max(0, int(center_x) - 3)
+    band = dark[:, lo:int(center_x) + 4].any(axis=1)
+
+    rows = np.where(band)[0]
+    if not rows.size:
+        raise MissingPOM(f"{garment}/{view}: no linework on the centre line")
+
+    groups, current = [], [int(rows[0])]
+    for y in rows[1:]:
+        if y - current[-1] <= 4:
+            current.append(int(y))
+        else:
+            groups.append(current)
+            current = [int(y)]
+    groups.append(current)
+
+    # The neck region: generous upward, because a jacket's hood back is drawn
+    # 37cm above the shoulders, but tight downward so the chest pocket and hem
+    # can never be mistaken for a collar. Taking the LOWEST group in the region
+    # means widening the top cannot change a garment whose collar was already
+    # found -- the hood's own top edge always loses to its neck seam.
+    top_limit = hsp_y - 45 * px_per_cm
+    bottom_limit = hsp_y + 15 * px_per_cm
+    in_neck = [g for g in groups if top_limit <= g[0] <= bottom_limit]
+    if not in_neck:
+        raise MissingPOM(f"{garment}/{view}: no collar line found near the neck")
+
+    return in_neck[-1][0]
 
 
 def _separated_body_run(row: np.ndarray):
@@ -232,4 +296,8 @@ def calibrate_flat(garment: str, view: str) -> FlatCalibration:
             f"Known garments: {', '.join(sorted(GARMENT_POM))}"
         )
 
-    return _ANCHORS[pom["anchor"]](load_flat_alpha(garment, view), pom)
+    base = _ANCHORS[pom["anchor"]](load_flat_alpha(garment, view), pom)
+    neck_y = find_neckline_y(
+        garment, view, base.center_x, base.hsp_y, base.px_per_cm
+    )
+    return replace(base, neck_y=neck_y)

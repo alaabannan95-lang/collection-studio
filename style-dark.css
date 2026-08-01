@@ -196,15 +196,19 @@ header.topbar .tag {
 }
 
 /* ---------- Tabs ---------- */
-.tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
 .tab-btn {
-  flex: 1;
+  /* Six tabs will not fit one row in a ~270px panel without clipping
+     "Measure", so they wrap 3 + 3. flex-basis 30% forces three per row;
+     min-width:0 stops a flex item refusing to shrink below its own text. */
+  flex: 1 1 30%;
+  min-width: 0;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
   padding: 7px 0;
-  font-size: 11px;
-  letter-spacing: 1px;
+  font-size: 10.5px;
+  letter-spacing: .5px;
   text-transform: uppercase;
   cursor: pointer;
   border-radius: 7px;

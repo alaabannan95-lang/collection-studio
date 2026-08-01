@@ -59,7 +59,7 @@ import os
 STUDIO_DIR = Path(os.environ.get("SOAP_STUDIO_DIR", ROOT / "Collection studio"))
 ASSETS = STUDIO_DIR / "assets"
 
-TOTAL_PAGES = 7
+TOTAL_PAGES = 8
 
 
 def format_spec_date(iso_date):
@@ -306,7 +306,9 @@ def draw_placement_page(c, spec, season_tag, garment, color, prints, calib):
     content_top = strip_bottom - 12
     content_bot = CONTENT_BOTTOM + 6
     label_h = 20
-    note_h = 24
+    # Room for the three wrapped note lines that explain the two neck datums,
+    # so the top line cannot creep into the drawing area above it.
+    note_h = 38
     area_h = content_top - content_bot - label_h - note_h
 
     half_w = CONTENT_W / 2 - 10
@@ -331,28 +333,57 @@ def draw_placement_page(c, spec, season_tag, garment, color, prints, calib):
             cx_pdf = img_x + p['cx'] * ratio
             cy_pdf = img_y + img_h - p['cy'] * ratio
             w_pdf = p['w'] * ratio
-            h_pdf = p['h'] * ratio
+
+            # Every mark hangs off the print's REAL highest and lowest points
+            # (the rotated bounding box the client sent), never an unrotated
+            # box. A tilted print's top corner sits well above cy - h/2, and
+            # the factory prints to whatever these arrows say.
+            top_px = p.get('topPx', p['cy'] - p['h'] / 2)
+            bottom_px = p.get('bottomPx', p['cy'] + p['h'] / 2)
+            top_pdf = img_y + img_h - top_px * ratio      # higher on the page
+            bottom_pdf = img_y + img_h - bottom_px * ratio
 
             method_label = 'SCREEN PRINT' if p.get('method') == 'screen' else 'EMBROIDERY'
-            tracked(c, method_label, cx_pdf - w_pdf / 2, cy_pdf + h_pdf / 2 + 34,
+            tracked(c, method_label, cx_pdf - w_pdf / 2, top_pdf + 34,
                     "RobotoCondItalic", 6.5, SIGNAL, tracking=1.2)
 
             # Width bracket just above the print. Sized from the artwork's
             # own pre-rotation width (the tech-pack convention) rather than
             # its rotated on-screen bounding box -- a rotated print will
             # still show its true width here, not a wider/narrower AABB.
-            draw_dim_mark(c, cx_pdf - w_pdf / 2, cy_pdf + h_pdf / 2 + 12,
-                          cx_pdf + w_pdf / 2, cy_pdf + h_pdf / 2 + 12,
+            draw_dim_mark(c, cx_pdf - w_pdf / 2, top_pdf + 14,
+                          cx_pdf + w_pdf / 2, top_pdf + 14,
                           f"{p['widthCm']:.1f} cm")
 
             if vcalib:
+                # HSP is the datum the pattern cutter works to. It is named
+                # explicitly because it is NOT the collar line anyone can see:
+                # on a hooded garment the drawn collar sits above it.
                 hsp_y_pdf = img_y + img_h - vcalib['hspY'] * ratio
                 leader_x = cx_pdf - w_pdf / 2 - 14
-                draw_dim_mark(c, leader_x, hsp_y_pdf, leader_x, cy_pdf + h_pdf / 2,
-                              f"top {p['belowCollarCm']:.1f} cm below collar")
+                draw_dim_mark(c, leader_x, hsp_y_pdf, leader_x, top_pdf,
+                              f"top {p['belowCollarCm']:.1f} cm below HSP")
 
+                # The same distance from the collar as drawn, so a factory
+                # measuring off the visible neckline lands in the same place.
+                if vcalib.get('necklineY') is not None and p.get('belowNecklineCm') is not None:
+                    neck_y_pdf = img_y + img_h - vcalib['necklineY'] * ratio
+                    neck_leader_x = leader_x - 26
+                    draw_dim_mark(c, neck_leader_x, neck_y_pdf, neck_leader_x, top_pdf,
+                                  f"{p['belowNecklineCm']:.1f} cm below neckline")
+
+                # Second vertical datum, from the print's lowest point down to
+                # the hem. Drawn on the opposite side so the two do not collide.
+                if vcalib.get('hemY') is not None and p.get('aboveHemCm') is not None:
+                    hem_y_pdf = img_y + img_h - vcalib['hemY'] * ratio
+                    hem_leader_x = cx_pdf + w_pdf / 2 + 14
+                    draw_dim_mark(c, hem_leader_x, bottom_pdf, hem_leader_x, hem_y_pdf,
+                                  f"bottom {p['aboveHemCm']:.1f} cm above hem")
+
+                # Centre-line offset sits BELOW the print's lowest point, so it
+                # stays clear of the width bracket above it.
                 center_x_pdf = img_x + vcalib['centerX'] * ratio
-                leader_y = cy_pdf - h_pdf / 2 - 14
+                leader_y = bottom_pdf - 16
                 side = 'right' if p['fromCenterCm'] >= 0 else 'left'
                 draw_dim_mark(c, center_x_pdf, leader_y, cx_pdf, leader_y,
                               f"{abs(p['fromCenterCm']):.1f} cm {side} of CF")
@@ -363,8 +394,17 @@ def draw_placement_page(c, spec, season_tag, garment, color, prints, calib):
         c.drawString(M, note_y, "No print or embroidery placed on this design.")
     else:
         tracked(c, "NOTE", M, note_y, "RobotoCondItalic", 7, SIGNAL, tracking=1.6)
-        c.setFont("RobotoItalic", 9); c.setFillColor(CHARCOAL)
-        c.drawString(M + 34, note_y, "Vertical placement measured from HSP (high shoulder point / collar) to the highest point of the print. Horizontal from garment centerline.")
+        # Wrapped, not drawn as one string: at 9pt this note runs past the right
+        # margin and off the page edge.
+        note = ("Vertical given from HSP (high shoulder point) and from the neckline as drawn to "
+                "the print's highest point, then from its lowest point to the hem. These two neck "
+                "datums are NOT the same line: on a hooded garment the drawn collar sits above "
+                "HSP. Horizontal from the garment centerline. Rotation is included.")
+        c.setFont("RobotoItalic", 8.5); c.setFillColor(CHARCOAL)
+        note_x = M + 34
+        lines = _wrap_lines(c, note, "RobotoItalic", 8.5, CONTENT_W - 34)
+        for i, line in enumerate(lines):
+            c.drawString(note_x, note_y + (len(lines) - 1 - i) * 10, line)
     c.showPage()
 
 
@@ -424,11 +464,111 @@ def draw_print_spec_page(c, spec, season_tag, prints, brand_swatches):
         c.drawString(text_x, text_top - 56, f"{p['widthCm']:.1f} × {p.get('heightCm', 0):.1f} cm")
 
         side = 'right' if p['fromCenterCm'] >= 0 else 'left'
-        placement = f"{p['belowCollarCm']:.1f} cm below collar · {abs(p['fromCenterCm']):.1f} cm {side} of center"
+        placement = f"top {p['belowCollarCm']:.1f} cm below HSP"
+        if p.get('belowNecklineCm') is not None:
+            placement += f" ({p['belowNecklineCm']:.1f} cm below neckline)"
+        if p.get('aboveHemCm') is not None:
+            placement += f" · bottom {p['aboveHemCm']:.1f} cm above hem"
+        placement += f" · {abs(p['fromCenterCm']):.1f} cm {side} of center"
         c.setFont("Roboto", 8.5); c.setFillColor(CHARCOAL)
         c.drawString(text_x, text_top - 72, placement)
 
         y -= card_h + gap
+
+    c.showPage()
+
+
+def draw_fabric_spec_page(c, spec, season_tag, fabric_spec, requirements):
+    """Fabric & finishing spec sheet.
+
+    GSM measures density, not quality. This page carries the fields that
+    actually decide whether a piece reads premium or cheap -- yarn spinning,
+    staple length, knit construction, the lay-in yarn, brushing, wet processing,
+    ribs and stitch density -- so a factory cannot substitute quietly on the
+    ones a weight-and-measurements tech pack leaves silent.
+
+    Anything set away from the premium answer prints in SIGNAL with the
+    preferred value beside it, so a downgrade is visible at a glance.
+    """
+    strip_bottom = frame(c, 5, TOTAL_PAGES, "Fabric & Finishing",
+                         "Yarn, knit, wet processing, trims", spec, season_tag)
+    content_top = strip_bottom - 12
+    content_bot = CONTENT_BOTTOM + 6
+
+    if not fabric_spec:
+        c.setFont("RobotoItalic", 11); c.setFillColor(CHARCOAL)
+        c.drawString(M, content_top - 30, "No fabric specification set for this design.")
+        c.showPage()
+        return
+
+    label_w = 132
+    value_x = M + label_w + 10
+    row_h = 13.5
+    group_gap = 5
+    req_row_h = 12
+    y = content_top - 6
+
+    c.setFont("RobotoItalic", 8); c.setFillColor(CHARCOAL)
+    c.drawString(M, y, "GSM measures density, not quality. The fields below decide it.")
+    y -= 16
+
+    for group in fabric_spec:
+        fields = group.get('fields', [])
+        if not fields:
+            continue
+        if y - (row_h * (len(fields) + 1)) < content_bot:
+            break
+
+        tracked(c, group.get('group', '').upper(), M, y, "RobotoCondItalic", 7.5, SIGNAL, tracking=1.6)
+        y -= 5
+        hline(c, M, y, M + CONTENT_W)
+        y -= row_h
+
+        for f in fields:
+            if y < content_bot:
+                break
+            value = (f.get('value') or '').strip() or "Not specified"
+            off = bool(f.get('offSpec'))
+
+            c.setFont("RobotoCondMed", 8.5); c.setFillColor(CHARCOAL)
+            c.drawString(M, y, f.get('label', ''))
+
+            c.setFont("RobotoCondBold" if off else "Roboto", 9)
+            c.setFillColor(SIGNAL if off else INK)
+            c.drawString(value_x, y, value)
+
+            if off and f.get('preferred'):
+                c.setFont("RobotoItalic", 7.5); c.setFillColor(CHARCOAL)
+                c.drawString(value_x, y - 8.5, f"Spec calls for: {f['preferred']}")
+                y -= 9
+
+            y -= row_h
+
+        y -= group_gap
+
+    # Without these the spec above is a claim, not a verified fact, so this
+    # block always prints: if the itemised list will not fit, it collapses to a
+    # single wrapped run rather than dropping off the page.
+    if requirements:
+        tracked(c, "REQUIRED WITH THE SAMPLE", M, y, "RobotoCondItalic", 7.5, SIGNAL, tracking=1.6)
+        y -= 5
+        hline(c, M, y, M + CONTENT_W)
+        y -= req_row_h
+
+        needed = req_row_h * len(requirements)
+        if y - needed > content_bot:
+            for req in requirements:
+                c.setFont("Roboto", 8.5); c.setFillColor(INK)
+                c.drawString(M, y, f"—  {req}")
+                y -= req_row_h
+        else:
+            c.setFont("Roboto", 8)
+            for line in _wrap_lines(c, "  ·  ".join(requirements), "Roboto", 8, CONTENT_W):
+                if y < content_bot:
+                    break
+                c.setFillColor(INK)
+                c.drawString(M, y, line)
+                y -= 10
 
     c.showPage()
 
@@ -477,7 +617,7 @@ def draw_seam_finish_page(c, spec, season_tag, garment, color, seam_parts, seam_
     """Front flat drawing with a red callout arrow from each construction
     point out to a seam-finish reference photo + label, mirroring the
     factory construction pages (e.g. the jacket tech pack's stitch page)."""
-    strip_bottom = frame(c, 5, TOTAL_PAGES, "Seam Finish", "Construction points, front", spec, season_tag)
+    strip_bottom = frame(c, 6, TOTAL_PAGES, "Seam Finish", "Construction points, front", spec, season_tag)
     content_top = strip_bottom - 12
     content_bot = CONTENT_BOTTOM + 6
 
@@ -554,7 +694,7 @@ def draw_seam_finish_page(c, spec, season_tag, garment, color, seam_parts, seam_
 
 
 def draw_pom_diagram_page(c, spec, season_tag, garment):
-    strip_bottom = frame(c, 6, TOTAL_PAGES, "Measurements", "Point-of-measure key, flat callouts", spec, season_tag)
+    strip_bottom = frame(c, 7, TOTAL_PAGES, "Measurements", "Point-of-measure key, flat callouts", spec, season_tag)
     content_top = strip_bottom - 12
     content_bot = CONTENT_BOTTOM + 6
     png_path = ASSETS / f"{garment['assetKey']}_pom.png"
@@ -570,7 +710,7 @@ def draw_pom_diagram_page(c, spec, season_tag, garment):
 
 
 def draw_size_chart_page(c, spec, season_tag, garment, size_grid=None):
-    strip_bottom = frame(c, 7, TOTAL_PAGES, "Size Chart", "Grade rule, centimetres", spec, season_tag)
+    strip_bottom = frame(c, 8, TOTAL_PAGES, "Size Chart", "Grade rule, centimetres", spec, season_tag)
     content_top = strip_bottom - 12
     content_bot = CONTENT_BOTTOM + 6
     pomkey = garment.get('pomKey')
@@ -627,6 +767,8 @@ def build_custom_techpack(payload):
     draw_flat_drawing_page(c, spec, season_tag, garment, color, prints)
     draw_placement_page(c, spec, season_tag, garment, color, prints, calib)
     draw_print_spec_page(c, spec, season_tag, prints, brand_swatches)
+    draw_fabric_spec_page(c, spec, season_tag, payload.get('fabricSpec', []),
+                          payload.get('fabricSpecRequirements', []))
     draw_seam_finish_page(c, spec, season_tag, garment, color,
                           payload.get('seamParts', []), payload.get('seamFinishes', []))
     draw_pom_diagram_page(c, spec, season_tag, garment)

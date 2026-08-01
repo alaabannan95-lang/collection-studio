@@ -11,6 +11,7 @@ const state = {
   prints: [], // { id, name, src, img, view, x, y, scale, rotation, opacity, color, method }
   selectedPrintId: null,
   seams: {}, // { partId: finishId } for the current garment's silhouette
+  fabricSpec: {}, // { fieldKey: value } yarn / knit / finishing / trims, see FABRIC_SPEC_GROUPS
   tab: 'color',
   measureOverrides: {}, // { garmentId: { rowIndex: { size: value } } } manual measure edits
 };
@@ -71,6 +72,7 @@ function init() {
   state.refNo = g.refNo;
   state.date = todayISO();
   state.seams = defaultSeams(g);
+  state.fabricSpec = { ...FABRIC_SPEC_DEFAULT };
   renderGarmentList();
   renderSizeRow();
   renderViewToggle();
@@ -78,6 +80,7 @@ function init() {
   renderColorTab();
   renderPrintTab();
   renderMeasureTab();
+  renderFabricTab();
   renderSeamsTab();
   renderDesignList();
   renderStage();
@@ -236,6 +239,11 @@ function bindGlobalControls() {
 
   document.getElementById('washInput').addEventListener('change', e => {
     state.wash = e.target.value;
+  });
+
+  document.getElementById('fabricSpecResetBtn').addEventListener('click', () => {
+    state.fabricSpec = { ...FABRIC_SPEC_DEFAULT };
+    renderFabricTab();
   });
 
   document.getElementById('refNoInput').addEventListener('change', e => {
@@ -647,20 +655,47 @@ function renderPrintTab() {
 function placementInfoText(p) {
   const g = currentGarment();
   const c = getCalib(g, p.view);
+  const m = printPlacementCm(printGeometryPx(g, p), c);
+  const side = m.fromCenterCm >= 0 ? 'right of CF' : 'left of CF';
+  // Both neck datums, each named. "Below collar" alone was ambiguous: on a
+  // hoodie the visible hood sits 4.1cm above HSP, so the same print reads
+  // 6.7cm from HSP and 10.8cm from the collar you can actually see.
+  const neckline = m.belowNecklineCm == null ? ''
+    : `top ${m.belowNecklineCm.toFixed(1)} cm below neckline (as drawn) · `;
+  return `${m.widthCm.toFixed(1)} × ${m.heightCm.toFixed(1)} cm · ` +
+    neckline +
+    `top ${m.belowCollarCm.toFixed(1)} cm below HSP (shoulder) · ` +
+    `bottom ${m.aboveHemCm.toFixed(1)} cm above hem · ` +
+    `${Math.abs(m.fromCenterCm).toFixed(1)} cm ${side}`;
+}
+
+// Pulls a layer back onto the canvas if it sits entirely outside it. Applies
+// the same rule the drag uses, so a rescued layer lands exactly where dragging
+// it that far would now stop. No-op for a layer already in view.
+function rescueOffscreenPrint(layer) {
+  const g = GARMENTS.find(x => x.id === state.garmentId) || currentGarment();
+  const calib = CALIBRATION[g.assetKey] && CALIBRATION[g.assetKey][layer.view];
+  if (!calib) return;
+  const zone = getPrintZonePx(g, layer.view);
+  const geo = printGeometryPx(g, layer);
+  const safe = clampPrintCenterPx(geo, calib.w, calib.h);
+  if (safe.cx === geo.cx && safe.cy === geo.cy) return;
+  layer.x = (safe.cx - zone.x) / zone.w;
+  layer.y = (safe.cy - zone.y) / zone.h;
+}
+
+// One print layer's final pixel geometry inside its own view image. Shared by
+// the live readout and the tech pack export so the two can never disagree.
+function printGeometryPx(g, p) {
   const zone = getPrintZonePx(g, p.view);
-  const wPx = zone.w * p.scale;
-  const aspect = p.img.naturalWidth / p.img.naturalHeight;
-  const hPx = wPx / aspect;
-  const widthCm = wPx / c.pxPerCm;
-  const cx = zone.x + zone.w / 2 + (p.x - 0.5) * zone.w;
-  const cy = zone.y + zone.h / 2 + (p.y - 0.5) * zone.h;
-  // Garment-industry convention: measure from the collar (HSP) to the HIGHEST
-  // point of the print (its top edge), not the print's center.
-  const topY = cy - hPx / 2;
-  const belowCollarCm = (topY - c.hspY) / c.pxPerCm;
-  const fromCenterCm = (cx - c.centerX) / c.pxPerCm;
-  const side = fromCenterCm >= 0 ? 'right of center' : 'left of center';
-  return `${widthCm.toFixed(1)} cm wide · top ${belowCollarCm.toFixed(1)} cm below collar · ${Math.abs(fromCenterCm).toFixed(1)} cm ${side}`;
+  const w = zone.w * p.scale;
+  const h = w / (p.img.naturalWidth / p.img.naturalHeight);
+  return {
+    cx: zone.x + zone.w / 2 + (p.x - 0.5) * zone.w,
+    cy: zone.y + zone.h / 2 + (p.y - 0.5) * zone.h,
+    w, h,
+    rotation: p.rotation || 0,
+  };
 }
 
 // ---------- Measurements tab ----------
@@ -774,6 +809,64 @@ function renderMeasureTab() {
   note.textContent = (g.note ? g.note + '  ' : '') +
     'Sizes without a sampled measurement are graded estimates — type in any cell to lock your own number (saved on this computer).';
   note.style.display = 'block';
+}
+
+// ---------- Fabric tab ----------
+// The fields that decide premium vs cheap at the same GSM. See
+// FABRIC_SPEC_GROUPS in data.js for the source and the reasoning per field.
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// True when the current value is not the premium answer, so the studio and the
+// tech pack can both flag it rather than let a downgrade slip through silently.
+function fabricSpecIsDowngrade(field, value) {
+  const v = (value || '').trim();
+  if (!v) return true;
+  return v !== field.preferred;
+}
+
+function renderFabricTab() {
+  const wrap = document.getElementById('fabricSpecFields');
+  if (!wrap) return;
+  if (!state.fabricSpec || !Object.keys(state.fabricSpec).length) {
+    state.fabricSpec = { ...FABRIC_SPEC_DEFAULT };
+  }
+
+  let html = '';
+  FABRIC_SPEC_GROUPS.forEach(group => {
+    html += `<div class="section-title" style="margin-top:18px;">${group.group}</div>`;
+    group.fields.forEach(f => {
+      const val = state.fabricSpec[f.key] != null ? state.fabricSpec[f.key] : '';
+      const off = fabricSpecIsDowngrade(f, val);
+      html += `<label class="hint" style="display:block; margin:10px 0 4px; color:var(--ink,#f3f1ec); font-weight:600;">${f.label}${off ? ' <span data-flag="1" style="color:#ef5350; font-weight:400;">· off-spec</span>' : ''}</label>`;
+      if (f.type === 'text') {
+        html += `<div class="color-input-row"><input type="text" class="fabric-spec-input" data-key="${f.key}" value="${escapeAttr(val)}" placeholder="${escapeAttr(f.placeholder || '')}" spellcheck="false" style="flex:1;"></div>`;
+      } else {
+        const opts = f.options.map(o =>
+          `<option value="${escapeAttr(o)}"${o === val ? ' selected' : ''}>${o}</option>`
+        ).join('');
+        html += `<div class="color-input-row"><select class="fabric-spec-input" data-key="${f.key}" style="flex:1;">${opts}</select></div>`;
+      }
+      html += `<p class="hint" style="margin:0 0 2px;">${f.note}</p>`;
+    });
+  });
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.fabric-spec-input').forEach(el => {
+    el.addEventListener('change', () => {
+      state.fabricSpec[el.dataset.key] = el.value;
+      renderFabricTab();
+    });
+  });
+
+  const reqs = document.getElementById('fabricSpecRequirements');
+  if (reqs) {
+    reqs.innerHTML = FABRIC_SPEC_REQUIREMENTS
+      .map(r => `<li class="layer-item" style="cursor:default;">${r}</li>`)
+      .join('');
+  }
 }
 
 // ---------- Seams tab ----------
@@ -961,32 +1054,38 @@ function bindStageInteraction() {
       state.selectedPrintId = hitId;
       renderPrintTab();
     }
-    const layer = getPrint(hitId);
-    dragState = { startX: p.x, startY: p.y, origX: layer.x, origY: layer.y };
+    // The drag accumulates move-to-move rather than from the press point, so
+    // the clamp cannot be "wound past" and then snap back on the way in.
+    dragState = { startX: p.x, startY: p.y };
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add('dragging');
   });
   canvas.addEventListener('pointermove', e => {
     const p = toCanvasCoords(canvas, e);
     if (dragState) {
-      const zone = getPrintZonePx(currentGarment(), state.view);
+      const g = currentGarment();
+      const zone = getPrintZonePx(g, state.view);
       const layer = selectedPrint();
-      if (layer) {
+      if (layer && layer.view === state.view) {
         const dx = p.x - dragState.startX, dy = p.y - dragState.startY;
-        const nx = dragState.origX + dx / zone.w;
-        const ny = dragState.origY + dy / zone.h;
-        // Free placement: the print can go anywhere over the garment, the same
-        // for every product. Bounds derive from each garment's own canvas + zone
-        // (so the limit no longer varies collection to collection). We allow the
-        // center to travel a margin past every image edge so it never hits a wall
-        // before the hem/sleeve, but not so far it gets lost off-canvas. The
-        // real-cm readout and tech pack export use this same x/y, so they stay
-        // accurate at any position.
-        const nxFor = cx => 0.5 + (cx - zone.x - zone.w / 2) / zone.w;
-        const nyFor = cy => 0.5 + (cy - zone.y - zone.h / 2) / zone.h;
-        const mx = canvas.width * 0.25, my = canvas.height * 0.25;
-        layer.x = clamp(nx, nxFor(-mx), nxFor(canvas.width + mx));
-        layer.y = clamp(ny, nyFor(-my), nyFor(canvas.height + my));
+        // Free placement: a print may hang off a sleeve or over the hem, which
+        // is a real design. The only rule is that it cannot be lost -- the
+        // clamp keeps a quarter of the print on the canvas so it stays visible
+        // and grabbable. The old bound was a fixed +/-25% of the canvas applied
+        // to the CENTRE, ignoring the print's size, which let a print dragged
+        // past a corner end up entirely off-canvas: still listed, still
+        // selected, drawing nothing, unfindable even by recolouring it.
+        const geo = printGeometryPx(g, layer);
+        const wanted = {
+          cx: geo.cx + dx, cy: geo.cy + dy,
+          w: geo.w, h: geo.h, rotation: geo.rotation,
+        };
+        const safe = clampPrintCenterPx(wanted, canvas.width, canvas.height);
+        // Back to the layer's zone-relative coordinates, the form everything
+        // else (readout, export, saved designs) already speaks.
+        layer.x = (safe.cx - zone.x) / zone.w;
+        layer.y = (safe.cy - zone.y) / zone.h;
+        dragState.startX = p.x; dragState.startY = p.y;
         document.getElementById('printPlacementInfo').textContent = placementInfoText(layer);
         paintStage();
       }
@@ -1029,22 +1128,18 @@ const TECHPACK_SERVER =
 // its own that could drift out of sync with the on-screen preview.
 function serializePrintForExport(g, p) {
   const c = getCalib(g, p.view);
-  const zone = getPrintZonePx(g, p.view);
-  const aspect = p.img.naturalWidth / p.img.naturalHeight;
-  const w = zone.w * p.scale;
-  const h = w / aspect;
-  const cx = zone.x + zone.w / 2 + (p.x - 0.5) * zone.w;
-  const cy = zone.y + zone.h / 2 + (p.y - 0.5) * zone.h;
+  const geo = printGeometryPx(g, p);
+  const m = printPlacementCm(geo, c);
+  const bounds = printBoundsPx(geo);
   return {
     view: p.view, name: p.name, src: p.src, color: p.color, method: p.method || 'embroidery',
     opacity: p.opacity, rotation: p.rotation,
-    cx, cy, w, h,
-    widthCm: w / c.pxPerCm,
-    heightCm: h / c.pxPerCm,
-    // Measured from the collar (HSP) to the print's highest point (top edge),
-    // per garment convention -- matches the leader arrow drawn on the PDF.
-    belowCollarCm: (cy - h / 2 - c.hspY) / c.pxPerCm,
-    fromCenterCm: (cx - c.centerX) / c.pxPerCm,
+    cx: geo.cx, cy: geo.cy, w: geo.w, h: geo.h,
+    // Rotated bounding box in the same pixel space, so the PDF can point its
+    // dimension leaders at the print's REAL highest and lowest points instead
+    // of assuming an unrotated box.
+    topPx: bounds.top, bottomPx: bounds.bottom,
+    ...m,
   };
 }
 
@@ -1233,6 +1328,19 @@ async function downloadTechpack() {
       .filter(part => part.on),
     seamFinishes: SEAM_FINISHES,
     sizeGrid: buildSizeGrid(g),
+    fabricSpec: FABRIC_SPEC_GROUPS.map(group => ({
+      group: group.group,
+      fields: group.fields.map(f => {
+        const value = state.fabricSpec[f.key] || '';
+        return {
+          label: f.label,
+          value,
+          preferred: f.preferred,
+          offSpec: fabricSpecIsDowngrade(f, value),
+        };
+      }),
+    })),
+    fabricSpecRequirements: FABRIC_SPEC_REQUIREMENTS,
   };
 
   btn.disabled = true;
@@ -1329,6 +1437,7 @@ function saveCurrentDesign() {
     refNo: state.refNo,
     date: state.date,
     seams: state.seams,
+    fabricSpec: state.fabricSpec,
     prints: state.prints.map(p => ({
       name: p.name, src: p.src, view: p.view, x: p.x, y: p.y,
       scale: p.scale, rotation: p.rotation, opacity: p.opacity, color: p.color,
@@ -1364,6 +1473,9 @@ function loadDesignById(id) {
   state.refNo = design.refNo != null ? design.refNo : g.refNo;
   state.date = design.date || todayISO();
   state.seams = design.seams || defaultSeams(g);
+  // Designs saved before the fabric spec existed fall back to the premium
+  // default rather than opening with empty fields.
+  state.fabricSpec = { ...FABRIC_SPEC_DEFAULT, ...(design.fabricSpec || {}) };
   state.prints = [];
   state.selectedPrintId = null;
 
@@ -1373,6 +1485,7 @@ function loadDesignById(id) {
   renderColorTab();
   renderPrintTab();
   renderMeasureTab();
+  renderFabricTab();
   renderSeamsTab();
   renderStage();
 
@@ -1388,6 +1501,11 @@ function loadDesignById(id) {
         weight: pd.weight || null, italic: pd.italic || false,
       };
       if (layer.color) applyPrintTint(layer);
+      // Designs saved while the old drag clamp was in place can carry a layer
+      // parked entirely off-canvas. Pull it back into reach on load so an
+      // already-broken design repairs itself instead of opening with an
+      // invisible layer in the list.
+      rescueOffscreenPrint(layer);
       state.prints.push(layer);
       if (layer.view === state.view) state.selectedPrintId = layer.id;
       renderPrintTab();
